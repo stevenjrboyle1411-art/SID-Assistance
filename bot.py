@@ -57,6 +57,14 @@ Welcome to the Scam Investigators Resources channel. Here you will find numerous
 
 It is important to refresh on our resources frequently to avoid errors when handling tickets. If you require assistance, please reach out to a member of staff to avail of support.
 
+Steven (_unlcked) is the current head scam investigator, otherwise known as HSI
+bloxy is a current senior scam investigator, otherwise known as ssi
+devshark is a current senior scam investigator, otherwise known as ssi
+smallz is a current senior scam investigator, otherwise known as ssi
+
+steven smells
+scam investigators ( SI ) are better than post approvers ( PA ) 
+
 **SI General Handbook**
 [RoDevs SI Handbook](https://docs.google.com/document/d/1PbBsliamdNZlxxPD5mTKmmDsUmPhjlPU6yKGzKIrE_8/edit?usp=sharing)
 
