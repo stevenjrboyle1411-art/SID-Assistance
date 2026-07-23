@@ -4,6 +4,7 @@ from discord.ext import commands
 import os
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
+GUILD_ID = discord.Object(id=995650336679276556)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -48,26 +49,16 @@ REOPEN_THREAD_MESSAGE = """Your thread was most likely auto-closed and not delet
 > Once you have done this, send a message in the thread. Doing so will reopen the thread. Then, ping me in the thread so I can review the evidence.
 Please let me know if you have any issues or questions doing this."""
 
-# ---------- Keyword matching ----------
-# Each entry: (keywords to match, title, content)
-TEMPLATES = [
-    (["opening", "open message", "welcome"], "Opening Message", OPENING_MESSAGE),
-    (["accus", "accusation"], "Accusing the Scammer", ACCUSING_MESSAGE),
-    (["tip", "tips"], "Ticket Conclusion and Tips Request", CONCLUSION_TIPS_MESSAGE),
-    (["closure", "conclusion", "settled", "closed"], "Ticket Conclusion", CONCLUSION_MESSAGE),
-    (["reopen", "auto-close", "auto close", "autoclose", "thread closed"], "Steps to Reopen a Closed Thread", REOPEN_THREAD_MESSAGE),
-]
-
-def find_template(query: str):
-    query_lower = query.lower()
-    for keywords, title, content in TEMPLATES:
-        if any(keyword in query_lower for keyword in keywords):
-            return title, content
-    return None, None
+# ---------- Template lookup ----------
+TEMPLATES = {
+    "opening": ("Opening Message", OPENING_MESSAGE),
+    "accusing": ("Accusing the Scammer", ACCUSING_MESSAGE),
+    "conclusion": ("Ticket Conclusion", CONCLUSION_MESSAGE),
+    "conclusion_tips": ("Ticket Conclusion and Tips Request", CONCLUSION_TIPS_MESSAGE),
+    "reopen": ("Steps to Reopen a Closed Thread", REOPEN_THREAD_MESSAGE),
+}
 
 # ---------- Slash command ----------
-
-GUILD_ID = discord.Object(id=995650336679276556)
 
 @bot.event
 async def on_ready():
@@ -79,17 +70,17 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-@bot.tree.command(name="ask", description="Ask for a Scam Investigator template")
-@app_commands.describe(query="What template do you need? e.g. 'opening', 'closure', 'auto-closed thread'")
-async def ask(interaction: discord.Interaction, query: str):
-    title, content = find_template(query)
-
-    if content is None:
-        await interaction.response.send_message(
-            "I couldn't match that to a template. Try: opening, accusing, closure, tips, or reopen thread.",
-            ephemeral=True
-        )
-        return
+@bot.tree.command(name="templates", description="Get a Scam Investigator template message")
+@app_commands.describe(template="Choose which template you need")
+@app_commands.choices(template=[
+    app_commands.Choice(name="Opening Message", value="opening"),
+    app_commands.Choice(name="Accusing the Scammer", value="accusing"),
+    app_commands.Choice(name="Ticket Conclusion", value="conclusion"),
+    app_commands.Choice(name="Ticket Conclusion + Tips Request", value="conclusion_tips"),
+    app_commands.Choice(name="Steps to Reopen a Closed Thread", value="reopen"),
+])
+async def templates_command(interaction: discord.Interaction, template: app_commands.Choice[str]):
+    title, content = TEMPLATES[template.value]
 
     embed = discord.Embed(
         title=title,
