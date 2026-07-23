@@ -15,13 +15,47 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ---------- Role-based access control (per-server) ----------
+
+ALLOWED_ROLES_BY_GUILD = {
+    995650336679276556: {995663617112416296, 995664357801345044},
+    1513911328807456778: {1529974721448513556},
+}
+
+def has_allowed_role():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if interaction.guild_id not in ALLOWED_ROLES_BY_GUILD:
+            # Server not configured with a role list — deny by default for safety
+            return False
+
+        allowed_role_ids = ALLOWED_ROLES_BY_GUILD[interaction.guild_id]
+        member_role_ids = {role.id for role in interaction.user.roles}
+
+        if allowed_role_ids.isdisjoint(member_role_ids):
+            raise app_commands.CheckFailure(
+                "You don't have a role permitted to use this command."
+            )
+        return True
+    return app_commands.check(predicate)
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        message = "You don't have permission to use this command."
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    else:
+        raise error
+
 # ---------- Resources embed content ----------
 
 EMBED_TITLE = "Scam Investigator Resources"
 EMBED_BODY = """
 Welcome to the Scam Investigators Resources channel. Here you will find numerous resources, ranging from ticket templates to handbooks.
 
-It is important to refresh on our resources frequently to avoid errors when handling tickets. If you require assistance, please reach out to a senior staff member to avail of support.
+It is important to refresh on our resources frequently to avoid errors when handling tickets. If you require assistance, please reach out to a member of staff to avail of support.
 
 **SI General Handbook**
 [RoDevs SI Handbook](https://docs.google.com/document/d/1PbBsliamdNZlxxPD5mTKmmDsUmPhjlPU6yKGzKIrE_8/edit?usp=sharing)
@@ -102,8 +136,6 @@ Possession of this document comes with the strict responsibility to maintain its
 Have a Question?
 Do not hesitate to ask for clarification. Asking questions is encouraged and demonstrates a commitment to learning. You may reach out to a fellow Scam Investigator or a Senior Scam Investigator/HSI for assistance.
 
-Steven ( _unlcked ) is the current Head Scam Investigator (HSI) 
-Smallz, Bloxy and DevShark are the current Senior Scam Investigators
 
 At a glance
 Read every ticket carefully, stay neutral, use video evidence whenever possible, follow chain of command, and never punish without the required permission if you are still training.
@@ -548,23 +580,52 @@ Departmental Order #005 -3/31/26: Rescission of the cherry-picking rule. [Effect
 The best investigators are not the fastest ones. They are the ones who are consistent, calm, and fair even when the case is annoying or the people involved are difficult. If you follow the handbook, keep your evidence clean, and ask for help when needed, you will improve quickly.
 """
 
+def is_genuine_question(question: str) -> bool:
+    """Cheap, fast check to filter out troll/nonsense/off-topic questions
+    before spending tokens on the expensive model."""
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_completion_tokens=5,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a filter for a Scam Investigator handbook assistant. "
+                        "Reply with exactly one word: YES if the message is a genuine, "
+                        "reasonable question that could plausibly relate to scam "
+                        "investigation, tickets, evidence, punishments, or department "
+                        "process. Reply NO if it is trolling, nonsense, spam, an insult, "
+                        "or clearly unrelated to the department."
+                    )
+                },
+                {"role": "user", "content": question}
+            ]
+        )
+        verdict = response.choices[0].message.content.strip().upper()
+        return verdict.startswith("YES")
+    except Exception:
+        # If the filter itself fails, default to allowing the question through
+        return True
+
 def ask_ai(question: str) -> str:
     system_prompt = (
         "You are a knowledgeable, thorough assistant answering questions for Scam "
-        "You can void questions if they are not related to the handbook simply saying this question does not relate to the handbook. "
         "Investigator staff, based ONLY on the handbook content provided below. "
-        "Give FULL, DETAILED, well-explained answers — don't just state the rule, "
-        "explain the reasoning behind it, mention related considerations, edge cases, "
-        "and any relevant context from elsewhere in the handbook that connects to the "
-        "question. Use headers, bullet points, and examples where they help clarity. "
-        "Aim to be comprehensive rather than brief. If the answer isn't in the handbook, "
-        "say so clearly rather than guessing.\n\n"
+        "Give detailed, well-explained answers, don't just state the rule, explain "
+        "the reasoning behind it and mention relevant context from the handbook. "
+        "Use headers and bullet points where they help clarity. "
+        "IMPORTANT LENGTH LIMIT: your entire answer must fit within roughly 2 pages "
+        "(around 500-700 words maximum). Do not exceed this. Be thorough but concise, "
+        "prioritize the most important and directly relevant information rather than "
+        "covering every possible angle. If the answer isn't in the handbook, say so "
+        "clearly rather than guessing.\n\n"
         f"=== SI General Handbook ===\n{HANDBOOK_TEXT}"
     )
 
     response = openai_client.chat.completions.create(
         model="gpt-5.6-luna",
-        max_completion_tokens=2000,
+        max_completion_tokens=900,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question}
@@ -587,6 +648,7 @@ async def on_ready():
 # ---------- Slash commands ----------
 
 @bot.tree.command(name="templates", description="Get a Scam Investigator template message")
+@has_allowed_role()
 @app_commands.describe(template="Choose which template you need")
 @app_commands.choices(template=[
     app_commands.Choice(name="Opening Message", value="opening"),
@@ -604,19 +666,33 @@ async def templates_command(interaction: discord.Interaction, template: app_comm
     )
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="ask", description="Ask SI Department Assistance a question")
+@bot.tree.command(name="ask", description="Ask a question about the SI handbooks")
+@has_allowed_role()
 @app_commands.describe(question="What do you want to know?")
 async def ask_command(interaction: discord.Interaction, question: str):
     await interaction.response.defer()  # AI call may take a few seconds
+
+    if not is_genuine_question(question):
+        await interaction.followup.send(
+            "That doesn't look like a genuine handbook question, so I'm skipping it to save tokens. "
+            "If it was real, try rephrasing it more clearly.",
+            ephemeral=True
+        )
+        return
+
     try:
         answer = ask_ai(question)
     except Exception as e:
         await interaction.followup.send(f"Something went wrong answering that: {e}")
         return
 
-    # Discord embed descriptions cap at 4096 chars — split long answers across multiple embeds
+    # Hard cap: never send more than 2 "pages" worth of content, no matter what the model returns
     chunk_size = 4000
+    max_chunks = 2
     chunks = [answer[i:i + chunk_size] for i in range(0, len(answer), chunk_size)] or [""]
+    if len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks]
+        chunks[-1] = chunks[-1][:chunk_size - 60] + "\n\n*(Response truncated to fit the 2-page limit.)*"
 
     first_embed = discord.Embed(
         title="Handbook Answer",
@@ -634,6 +710,7 @@ async def ask_command(interaction: discord.Interaction, question: str):
         await interaction.followup.send(embed=follow_embed)
 
 @bot.tree.command(name="updateresources", description="Edit the existing Resources message with the latest content")
+@has_allowed_role()
 @app_commands.describe(message_id="The message ID of the Resources embed to update")
 @app_commands.checks.has_permissions(manage_messages=True)
 async def updateresources_command(interaction: discord.Interaction, message_id: str):
