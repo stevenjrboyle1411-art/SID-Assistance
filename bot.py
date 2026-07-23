@@ -586,24 +586,26 @@ def is_genuine_question(question: str) -> bool:
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
-            max_completion_tokens=5,
+            max_completion_tokens=20,
             messages=[
                 {
                     "role": "system",
                     "content": (
                         "You are a filter for a Scam Investigator handbook assistant. "
-                        "Reply with exactly one word: YES if the message is a genuine, "
+                        "Reply with ONLY one word, exactly YES or NO, no punctuation, "
+                        "no explanation. Reply YES if the message is a genuine, "
                         "reasonable question that could plausibly relate to scam "
                         "investigation, tickets, evidence, punishments, or department "
-                        "process. Reply NO if it is trolling, nonsense, spam, an insult, "
-                        "or clearly unrelated to the department."
+                        "process. Reply NO only if it is clearly trolling, spam, an "
+                        "insult, or has nothing at all to do with the department. "
+                        "When in doubt, reply YES."
                     )
                 },
                 {"role": "user", "content": question}
             ]
         )
-        verdict = response.choices[0].message.content.strip().upper()
-        return verdict.startswith("YES")
+        verdict = (response.choices[0].message.content or "").strip().upper()
+        return "NO" not in verdict
     except Exception:
         # If the filter itself fails, default to allowing the question through
         return True
