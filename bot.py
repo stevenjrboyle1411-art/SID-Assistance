@@ -561,7 +561,7 @@ def ask_ai(question: str) -> str:
 
     response = openai_client.chat.completions.create(
         model="gpt-5.6-luna",
-        max_tokens=2000,
+        max_completion_tokens=2000,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question}
