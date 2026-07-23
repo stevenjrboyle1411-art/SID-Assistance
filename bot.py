@@ -94,11 +94,12 @@ def build_templates_embed():
     embed.timestamp = discord.utils.utcnow()
     return embed
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def postresources(ctx):
     channel = bot.get_channel(CHANNEL_ID)
     await channel.send(embed=build_templates_embed())
     await channel.send(embed=build_embed())
+    await ctx.send("Posted.", delete_after=3)
 
 bot.run(TOKEN)
