@@ -3,13 +3,13 @@ from discord import app_commands
 from discord.ext import commands
 import os
 import requests
-from anthropic import Anthropic
+from openai import OpenAI
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 GUILD_ID = discord.Object(id=995650336679276556)
 
-anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -116,7 +116,7 @@ def load_handbooks():
         except Exception as e:
             print(f"Failed to load handbook '{name}': {e}")
 
-def ask_claude(question: str) -> str:
+def ask_ai(question: str) -> str:
     combined_docs = "\n\n".join(
         f"=== {name} ===\n{text}" for name, text in handbook_text_cache.items()
     )
@@ -128,13 +128,15 @@ def ask_claude(question: str) -> str:
         f"{combined_docs}"
     )
 
-    response = anthropic_client.messages.create(
-        model="claude-haiku-4-5-20251001",
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
         max_tokens=600,
-        system=system_prompt,
-        messages=[{"role": "user", "content": question}]
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question}
+        ]
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 # ---------- Bot events ----------
 
@@ -174,7 +176,7 @@ async def templates_command(interaction: discord.Interaction, template: app_comm
 async def ask_command(interaction: discord.Interaction, question: str):
     await interaction.response.defer()  # AI call may take a few seconds
     try:
-        answer = ask_claude(question)
+        answer = ask_ai(question)
     except Exception as e:
         await interaction.followup.send(f"Something went wrong answering that: {e}")
         return
