@@ -104,7 +104,11 @@ handbook_text_cache = {}
 
 def fetch_doc_text(doc_id: str) -> str:
     url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
-    response = requests.get(url, timeout=15)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
     response.raise_for_status()
     return response.text
 
