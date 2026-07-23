@@ -21,7 +21,7 @@ EMBED_TITLE = "Scam Investigator Resources"
 EMBED_BODY = """
 Welcome to the Scam Investigators Resources channel. Here you will find numerous resources, ranging from ticket templates to handbooks.
 
-It is important to refresh on our resources frequently to avoid errors when handling tickets. If you require assistance, please reach out to a member of staff to avail of support.
+It is important to refresh on our resources frequently to avoid errors when handling tickets. If you require assistance, please reach out to a senior staff member to avail of support.
 
 **SI General Handbook**
 [RoDevs SI Handbook](https://docs.google.com/document/d/1PbBsliamdNZlxxPD5mTKmmDsUmPhjlPU6yKGzKIrE_8/edit?usp=sharing)
