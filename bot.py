@@ -627,13 +627,20 @@ def ask_ai(question: str) -> str:
 
     response = openai_client.chat.completions.create(
         model="gpt-5.6-luna",
-        max_completion_tokens=900,
+        max_completion_tokens=2500,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question}
         ]
     )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        return (
+            "I wasn't able to generate a full answer for that one, it may have been "
+            "too complex for the current response limit. Try breaking your question "
+            "into smaller, more specific parts."
+        )
+    return content
 
 # ---------- Bot events ----------
 
