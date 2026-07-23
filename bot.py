@@ -1,34 +1,16 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import os
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
-CHANNEL_ID = 1529617348644962314  # your channel ID
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-EMBED_TITLE = "Scam Investigator Resources"
-EMBED_BODY = """
-Welcome to the Scam Investigators Resources channel. Here you will find numerous resources, ranging from ticket templates to handbooks.
-
-It is important to refresh on our resources frequently to avoid errors when handling tickets. If you require assistance, please reach out to a member of staff to avail of support.
-
-**SI General Handbook**
-[RoDevs SI Handbook](https://docs.google.com/document/d/1PbBsliamdNZlxxPD5mTKmmDsUmPhjlPU6yKGzKIrE_8/edit?usp=sharing)
-
-**SI Ban Appeal Guide**
-[RoDevs SI Ban Appeal Guide](https://docs.google.com/document/d/1A8r-GMBX8kj7o0VxhLUZ3L4bMA-llXNhSfzvqMDhcR8/edit?usp=sharing)
-
-**SI AI-Detection Guide**
-[AI Detection Guide](https://docs.google.com/document/d/1PbBsliamdNZlxxPD5mTKmmDsUmPhjlPU6yKGzKIrE_8/edit?usp=sharing)
-
-It is important to ensure you stay refreshed on the above frequently.
-"""
-
-TEMPLATES_TITLE = "Scam Investigator Template Messages"
+# ---------- Template content ----------
 
 OPENING_MESSAGE = """Hey there, I'm [NAME], a Scam Investigator at RoDevs. Thank you for your patience!
 **Please provide the following:**
@@ -66,40 +48,51 @@ REOPEN_THREAD_MESSAGE = """Your thread was most likely auto-closed and not delet
 > Once you have done this, send a message in the thread. Doing so will reopen the thread. Then, ping me in the thread so I can review the evidence.
 Please let me know if you have any issues or questions doing this."""
 
-TEMPLATES_BODY = (
-    "**Opening Message**\n```\n" + OPENING_MESSAGE + "\n```\n\n"
-    "**Accusing the Scammer**\n```\n" + ACCUSING_MESSAGE + "\n```\n\n"
-    "**Ticket Conclusion**\n```\n" + CONCLUSION_MESSAGE + "\n```\n\n"
-    "**Ticket Conclusion and Tips Request**\n```\n" + CONCLUSION_TIPS_MESSAGE + "\n```\n\n"
-    "**Steps to Reopen a Closed Thread**\n```\n" + REOPEN_THREAD_MESSAGE + "\n```"
-)
+# ---------- Keyword matching ----------
+# Each entry: (keywords to match, title, content)
+TEMPLATES = [
+    (["opening", "open message", "welcome"], "Opening Message", OPENING_MESSAGE),
+    (["accus", "accusation"], "Accusing the Scammer", ACCUSING_MESSAGE),
+    (["tip", "tips"], "Ticket Conclusion and Tips Request", CONCLUSION_TIPS_MESSAGE),
+    (["closure", "conclusion", "settled", "closed"], "Ticket Conclusion", CONCLUSION_MESSAGE),
+    (["reopen", "auto-close", "auto close", "autoclose", "thread closed"], "Steps to Reopen a Closed Thread", REOPEN_THREAD_MESSAGE),
+]
 
-def build_embed():
+def find_template(query: str):
+    query_lower = query.lower()
+    for keywords, title, content in TEMPLATES:
+        if any(keyword in query_lower for keyword in keywords):
+            return title, content
+    return None, None
+
+# ---------- Slash command ----------
+
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} slash command(s)")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+
+@bot.tree.command(name="ask", description="Ask for a Scam Investigator template")
+@app_commands.describe(query="What template do you need? e.g. 'opening', 'closure', 'auto-closed thread'")
+async def ask(interaction: discord.Interaction, query: str):
+    title, content = find_template(query)
+
+    if content is None:
+        await interaction.response.send_message(
+            "I couldn't match that to a template. Try: opening, accusing, closure, tips, or reopen thread.",
+            ephemeral=True
+        )
+        return
+
     embed = discord.Embed(
-        title=EMBED_TITLE,
-        description=EMBED_BODY,
+        title=title,
+        description=f"```\n{content}\n```",
         color=discord.Color.blurple()
     )
-    embed.set_footer(text="Posted automatically by the bot")
-    embed.timestamp = discord.utils.utcnow()
-    return embed
-
-def build_templates_embed():
-    embed = discord.Embed(
-        title=TEMPLATES_TITLE,
-        description=TEMPLATES_BODY,
-        color=discord.Color.blurple()
-    )
-    embed.set_footer(text="SIDA")
-    embed.timestamp = discord.utils.utcnow()
-    return embed
-
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def postresources(ctx):
-    channel = bot.get_channel(CHANNEL_ID)
-    await channel.send(embed=build_templates_embed())
-    await channel.send(embed=build_embed())
-    await ctx.send("Posted.", delete_after=3)
+    await interaction.response.send_message(embed=embed)
 
 bot.run(TOKEN)
