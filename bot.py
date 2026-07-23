@@ -67,12 +67,15 @@ def find_template(query: str):
 
 # ---------- Slash command ----------
 
+GUILD_ID = discord.Object(id=995650336679276556)
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
     try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash command(s)")
+        bot.tree.copy_global_to(guild=GUILD_ID)
+        synced = await bot.tree.sync(guild=GUILD_ID)
+        print(f"Synced {len(synced)} slash command(s) to guild")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
