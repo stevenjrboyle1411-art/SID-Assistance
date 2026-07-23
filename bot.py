@@ -548,15 +548,20 @@ The best investigators are not the fastest ones. They are the ones who are consi
 
 def ask_ai(question: str) -> str:
     system_prompt = (
-        "You are a helpful assistant answering questions for Scam Investigator staff "
-        "based ONLY on the handbook content provided below. If the answer isn't in the "
-        "handbook, say so clearly rather than guessing. Keep answers concise and practical.\n\n"
+        "You are a knowledgeable, thorough assistant answering questions for Scam "
+        "Investigator staff, based ONLY on the handbook content provided below. "
+        "Give FULL, DETAILED, well-explained answers — don't just state the rule, "
+        "explain the reasoning behind it, mention related considerations, edge cases, "
+        "and any relevant context from elsewhere in the handbook that connects to the "
+        "question. Use headers, bullet points, and examples where they help clarity. "
+        "Aim to be comprehensive rather than brief. If the answer isn't in the handbook, "
+        "say so clearly rather than guessing.\n\n"
         f"=== SI General Handbook ===\n{HANDBOOK_TEXT}"
     )
 
     response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        max_tokens=600,
+        model="gpt-5.6-luna",
+        max_tokens=2000,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question}
@@ -606,13 +611,24 @@ async def ask_command(interaction: discord.Interaction, question: str):
         await interaction.followup.send(f"Something went wrong answering that: {e}")
         return
 
-    embed = discord.Embed(
+    # Discord embed descriptions cap at 4096 chars — split long answers across multiple embeds
+    chunk_size = 4000
+    chunks = [answer[i:i + chunk_size] for i in range(0, len(answer), chunk_size)] or [""]
+
+    first_embed = discord.Embed(
         title="Handbook Answer",
-        description=answer,
+        description=chunks[0],
         color=discord.Color.blurple()
     )
-    embed.set_footer(text=f"Q: {question}"[:2048])
-    await interaction.followup.send(embed=embed)
+    first_embed.set_footer(text=f"Q: {question}"[:2048])
+    await interaction.followup.send(embed=first_embed)
+
+    for chunk in chunks[1:]:
+        follow_embed = discord.Embed(
+            description=chunk,
+            color=discord.Color.blurple()
+        )
+        await interaction.followup.send(embed=follow_embed)
 
 @bot.tree.command(name="updateresources", description="Edit the existing Resources message with the latest content")
 @app_commands.describe(message_id="The message ID of the Resources embed to update")
