@@ -102,6 +102,8 @@ Possession of this document comes with the strict responsibility to maintain its
 Have a Question?
 Do not hesitate to ask for clarification. Asking questions is encouraged and demonstrates a commitment to learning. You may reach out to a fellow Scam Investigator or a Senior Scam Investigator/HSI for assistance.
 
+Steven ( _unlcked ) is the current Head Scam Investigator (HSI) 
+Smallz, Bloxy and DevShark are the current Senior Scam Investigators
 
 At a glance
 Read every ticket carefully, stay neutral, use video evidence whenever possible, follow chain of command, and never punish without the required permission if you are still training.
