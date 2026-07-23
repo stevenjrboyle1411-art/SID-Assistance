@@ -2,7 +2,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import os
-import requests
 from openai import OpenAI
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
@@ -92,44 +91,467 @@ TEMPLATES = {
     "reopen": ("Steps to Reopen a Closed Thread", REOPEN_THREAD_MESSAGE),
 }
 
-# ---------- Handbook Q&A setup ----------
+# ---------- Handbook Q&A setup (static text, no Google dependency) ----------
 
-HANDBOOK_DOCS = {
-    "SI General Handbook": "1PbBsliamdNZlxxPD5mTKmmDsUmPhjlPU6yKGzKIrE_8",
-    "SI Ban Appeal Guide": "1A8r-GMBX8kj7o0VxhLUZ3L4bMA-llXNhSfzvqMDhcR8",
-    "SI AI-Detection Guide": "10Ki9Gqc5tvnOr-l7sE1hdOxhLCnGNWwOz1-_bnsUh08",
-}
+HANDBOOK_TEXT = """Created for the RoDevs Scam Investigation Department
+This handbook explains roles, ticket handling, evidence standards, logging, punishments, escalation, and department discipline.
 
-handbook_text_cache = {}
+Possession of this document comes with the strict responsibility to maintain its confidentiality. Any individual found leaking or sharing the contents of this document will be permanently blacklisted from RoDevs.
 
-def fetch_doc_text(doc_id: str) -> str:
-    url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
-    response.raise_for_status()
-    return response.text
 
-def load_handbooks():
-    for name, doc_id in HANDBOOK_DOCS.items():
-        try:
-            handbook_text_cache[name] = fetch_doc_text(doc_id)
-            print(f"Loaded handbook: {name} ({len(handbook_text_cache[name])} chars)")
-        except Exception as e:
-            print(f"Failed to load handbook '{name}': {e}")
+Have a Question?
+Do not hesitate to ask for clarification. Asking questions is encouraged and demonstrates a commitment to learning. You may reach out to a fellow Scam Investigator or a Senior Scam Investigator/HSI for assistance.
+
+
+At a glance
+Read every ticket carefully, stay neutral, use video evidence whenever possible, follow chain of command, and never punish without the required permission if you are still training.
+
+
+Quick Reference
+Topic
+Rule
+Training
+TSIs need permission from a Trainer or SSI before working tickets.
+Punishment authority
+SIs can punish independently. TSIs cannot.
+Evidence
+Video evidence is preferred and often required for review.
+Private staff notes
+Use $$ in ticket messages so victims/accused cannot see them.
+Logging
+Use approved hosts such as YouTube, Google Drive, or Imgur.
+Naming
+Rename logs to Scam Log [Ticket Number].
+
+
+1. Introduction
+
+SI Code Of Conduct
+Take your time to investigate every ticket thoroughly and ensure the scammer is correctly reprimanded. One common issue within the department is ticket-sniping, where scam investigators (mainly trials) rush tickets and end up making mistakes. It's better to take your time and do it well than rush and make mistakes just for higher numbers. Those who take their time are rewarded more than those who rush due to the high quality of their investigation.
+Always be professional in tickets, you must not show any bias or be immature as this can give a bad image to the department.
+Be respectful to your peers and other staff members. You are not above anyone; treat others how you want to be treated.
+DO NOT leak anything, this can be a scam investigator guide, chats from the staff server etc. If found leaking, you will face the consequences.
+If you are reading this handbook, you have already cleared an important first step. Scam Investigation is not just about catching bad behavior. It is about protecting the community, making fair decisions, and keeping your work consistent enough that other staff can trust your judgment.
+The biggest difference between a good investigator and a rushed one is discipline. Good investigators slow down long enough to understand the report, compare evidence, ask the right questions, and make decisions that are defensible later. This handbook is designed to give you that structure.
+
+Department mindset
+Be calm, neutral, and methodical. Your job is not to "win" an argument. Your job is to find out what actually happened and investigate it properly.
+
+2. Roles and Responsibilities
+The department is organized so that each rank has a clear purpose. That makes the workflow faster, keeps training consistent, and prevents investigators from overstepping into decisions they are not supposed to make.
+Role
+Main purpose
+What they can do
+What they should avoid
+Trial Scam Investigator (TSI)
+Learn the process
+Review tickets with approval, ask questions, practice investigations
+Punishing without permission, working outside guidance
+Scam Investigator (SI)
+Handle day-to-day cases
+Investigate independently, speak to users, issue punishments
+Ignoring neutrality, skipping evidence checks
+Senior Scam Investigator (SSI)
+Oversee quality
+Handle escalations, support training, issue disciplinary actions, review difficult cases, assist the HSI
+Micromanaging routine tickets unnecessarily
+Head Scam Investigator (HSI)
+Lead the department
+Set final direction, resolve major disputes, oversee staff decisions
+Getting pulled into routine cases too early
+
+
+TSIs are in the learning stage. They should expect to ask a lot of questions and should never treat that as a weakness. Questions are how you learn the standards before they become habits. SIs are expected to move more independently, but independence still comes with the same expectations for fairness, evidence quality, and professionalism. SSIs and HSIs exist to keep the department aligned and to resolve cases that are too sensitive, too complex, or too escalated for a lower rank to handle cleanly.
+3. Chain of Command
+The chain of command keeps communication efficient and avoids unnecessary escalation.
+Order
+Rank
+1
+Trial Scam Investigator
+2
+Scam Investigator
+3
+Senior Scam Investigator
+4
+Head Scam Investigator
+5
+Administrator
+
+
+When you need help, contact the lowest rank above you that can realistically solve the problem. Do not skip rank levels unless the proper person is unavailable. The point is to keep workload organized and to make sure decisions are made by the right people.
+4. Getting Started
+Before touching any ticket, get approval from your Trainer or an available SSI if you are still a TSI. That permission step matters because it confirms that someone above you knows you are actively training and gives them a chance to steer you before mistakes become habits.
+Open the ticket and read the full report before typing anything.
+Identify the type of scam or issue being reported.
+Check whether the case is clearly yours to handle or should be escalated.
+Gather the evidence first, then decide on next steps.
+Keep your messages respectful and focused on facts.
+5. Understanding Tickets and Cases
+Every ticket has a structure for a reason. The reporter, their original message, the target, the target's region or timezone, and the reported scam type are not random details. They tell you who is involved, what happened, and how the case should be approached.
+Read this part carefully
+The first mistake many new investigators make is reacting too quickly to the first message they see. Always read the full ticket context before claiming ownership or asking the accused to respond.
+
+
+Ticket element
+Why it matters
+Reporter
+Shows who is claiming harm and may need follow-up questions.
+Original message
+Contains the original allegation and usually the strongest starting context.
+Target
+Tells you who is accused and who may need to be added to the ticket.
+Region/timezone
+Helps you understand response windows and timing.
+Scam type
+Directs you toward the right investigation workflow.
+Evidence links
+Tells you whether the report has usable supporting material.
+
+
+
+If you need to message other staff inside the ticket, use $$ before the message so the victim and accused cannot read it. That keeps internal notes private and prevents confusion or unnecessary escalation inside the case. Always maintain proper grammar across all cases.
+6. Evidence Standards
+Evidence quality is one of the most important parts of the department. In most cases, video evidence is the safest standard because screenshots can be cropped, edited, or taken out of context.
+Ask for full-screen recordings of the full DMs or the scam. You're looking for the original deal, the payment agreement and the scam.
+Ask for a page reload as well as them showing their extensions at the start of the video if evidence comes from the Discord web version.
+Request external uploads to YouTube, Drive, or Dropbox if the file is too large for Discord.
+Treat missing or incomplete evidence carefully. Do not guess.
+Use image searches and verification tools when checking marketplace assets.
+
+Important
+If a report cannot be supported with usable evidence and the user cannot provide what is needed, drop the report rather than forcing a weak decision.
+
+7. Investigating Marketplace Scams and Ghost Tickets
+Marketplace scams are cases involving selling stolen, free, AI-generated, plagiarized, or otherwise misrepresented work, or using them in posts. These reports often appear as ghost tickets, meaning the report was created automatically from a post rather than manually created by a victim.
+Run a background check on the accused so you understand prior behavior and possible patterns.
+Review the post or work example and try to locate the original source using reverse search tools.
+If the original cannot be found, add the reporter to the ticket and ask them for the missing link.
+If the reporter cannot provide a usable source, drop the report rather than guessing.
+Once you have strong evidence, add the accused user to the ticket.
+Ask the accused to prove ownership or legitimate rights to the asset.
+If they prove ownership, drop the report. If they cannot, continue toward resolution or punishment.
+
+Tool / action
+Purpose
+/background-check
+See scam logs
+Yandex reverse image search
+Good for finding copied artwork, stolen previews, and alternate sources.
+TinEye
+Strong for exact and near-exact image matches and older copies.
+Google reverse image search
+Useful for broad web matches, visually similar results, and alternate indexing.
+SynthID via Gemini
+Used to check whether an image was made by Google AI tools.
+SightEngine / AI image detectors
+Detecting if an image has been AI generated.
+
+
+When someone is accused of using stolen work, the key question is not whether the work looks impressive. The real question is whether they had the right to present it as theirs. Ask for creation proof, purchase proof with resale rights, or any other evidence that actually proves legitimate ownership.
+Subtopic: Investigating AI-Generated Work
+What to look for in images and GFX
+· Conflicting shadows or lighting that do not match the same scene.
+· Asymmetry where symmetry should exist, like uneven eyes, ears, hands, or clothing edges.
+· Hand and finger errors, merged fingers, extra fingers, or unnatural bends.
+· Glossy, over-smoothed, or oddly painterly AI-looking surfaces.
+· Background objects floating, warping, or failing to connect naturally to the scene.
+· Repeated textures, warped text, strange logos, or details that look copied from a generator rather than drawn by hand.
+
+What to look for in 3D models and assets
+· Chaotic geometry or pointless surface noise on edges, tips, and corners.
+· Objects that should be symmetrical but are subtly different on each side.
+· Merged parts that should be separate, such as a blade fused into the hilt or a barrel fused into the frame.
+· Non-functional details like solid triggers, fake barrel openings, or broken joints.
+· Lumpy edge terminations, warped circles, uneven spokes, and poor topology.
+· Textures or materials that do not match the shape and quality of the mesh.
+
+Topology note: Poor topology, broken geometry, and unnatural mesh structure are strong clues when checking whether a model may have been AI-generated or heavily auto-produced.
+
+What to look for in scripts
+· Very generic function and variable names that feel template-like.
+· Unnatural or overly robotic comments in places where a human normally would not comment so much.
+· A script structure that feels too polished, repetitive, or boilerplate-heavy without real project context.
+· Missing signs of natural iteration, such as consistent naming changes, edit history, or believable development flow.
+
+SynthID specifically
+SynthID is Google DeepMind's invisible watermarking system for images produced by Google AI tools such as Gemini or Imagen. It is useful, but it is not universal. A positive SynthID result means that the image was generated with SynthID.
+· Open Gemini and upload the image.
+· Ask directly whether the image has a SynthID watermark.
+· Treat detected SynthID as evidence that the image came from Google AI tools.
+· Treat not detected or uncertain as incomplete, not as proof that the work is human-made.
+
+Key rule: No tool should be treated as absolute proof on its own. Use the tool result alongside visual cues, source tracing, and ownership proof.
+
+What to request from the accused
+· Original project files such as .blend, .psd, or similar source files.
+· Version history, timestamps, or creation proof of script creation/model creation.
+· Sketches, drafts, or work-in-progress files.
+· Receipts or licenses if they bought the asset legally.
+· A clear explanation of where the asset came from and why they had the right to use it.
+8. Investigating Time-Wasting, Ghosting, Blocking, and Deal Changes
+Time-wasting cases are usually commission disputes. One party agrees to a deal and then breaks it in a way that harms the other party's time, money, or work output. Sometimes the developer never finishes. Sometimes the client fails to pay. Sometimes one party changes the deal without permission. Sometimes someone blocks the other person to escape the agreement.
+These cases should be handled with a strong effort to understand the full situation before punishing anyone. A good investigation in this category often starts with the simplest question: can this be resolved by refund or compromise first?
+Ask for the accused's Discord User ID if needed so you can add them to the ticket.
+Request evidence of the original agreement.
+Request evidence of the transaction or payment flow.
+Request evidence of the actual scam or failure to deliver.
+Verify the evidence in full-screen video format whenever possible.
+Check whether the story matches the timestamps and messages.
+Run background checks
+Add the accused to the ticket and allow the response window.
+
+Practical goal
+Try to resolve the issue through refund or compromise before moving directly to punishment whenever the facts support that approach.
+
+
+If the accused responds, keep the discussion steady and factual. Ask them to explain missing details. Compare both sides against the evidence & make your verdict on the case. If the refund happens, a warning or no punishment may be appropriate depending on the circumstances. If the user refuses to respond after the response window, you may proceed according to department rules.
+
+If the accused doesn't comply, please proceed to punishments below.
+
+Communication with Accused Scammer:
+
+Add the accused scammer to the ticket and provide a 12-24 hour response deadline.
+Request video evidence to support their explanation.
+Evaluate common explanations:
+Hospital visit: Lower punishment consideration.
+School: Consider the time wasted and lower punishment if it's like exam period, May-June.
+Not enough time: Determine an acceptable extension if the victim wants.
+Vacation: Consider the time wasted and lower punishment
+Not enough money: Set a payment deadline or estimate.
+Work was too hard: Negotiate a partial refund or full refund.
+Distrust of the other party: Suggest a middleman.
+Work quality issues: Evaluate work against provided references.
+No explanation: Apply appropriate penalties.
+
+
+9. How to Investigate Without Losing Neutrality
+Use common sense, but do not rely on intuition alone.
+Ask clear follow-up questions instead of assuming the answer.
+Compare what each side says against the evidence line by line.
+Pay attention to timestamps, delivery promises, payment status, and changes in agreement terms.
+Stay professional even if one side is rude or defensive.
+Remember that a loud story is not the same as a true story.
+
+Neutrality is not passive behavior. It means you are actively checking both sides with the same standards. You are not there to protect the first person who speaks. You are there to verify what happened.
+
+Asking Effective Questions:
+Incorporate open-ended questions to uncover the reasoning behind actions.
+Avoid judgmental language or phrasing to encourage complete information disclosure, judgemental language would risk alienating the scammer and compromise possible resolutions.
+Frame questions neutrally. For instance, "What were your initial thoughts when they requested your password?" instead of "Weren't you suspicious when they asked for your password?".
+Explore different perspectives without appearing biased.
+Ensure questioning does not favor the scammer's viewpoint or unduly scrutinize the victim.
+Focus on understanding all facets of the situation from a neutral standpoint.
+Focus on open-ended inquiries about motivations and maintain a neutral, non-judgmental stance to foster information sharing.
+Gain a deeper understanding of the dynamics at play in scam investigations.
+For all screenshots sent out of context, request context behind them and the other side's opinion, and request videos or extra evidence if needed.
+Understand everything to work out a resolution or make a coherent decision.
+Ensure you gather enough information from both sides, including their opinions on each other's evidence, to come to a fair resolution.
+Punish inconsistencies in arguments effectively by refuting.
+
+10. Logging a Ticket
+Once a case is concluded, the log has to be clear enough that another staff member can understand the decision later without needing to re-investigate from scratch.
+Logging rule
+What to do
+Approved hosts
+Use YouTube, Google Drive, or Imgur for final evidence storage.
+Naming convention
+Rename the video file to Scam Log [Ticket Number].
+Visibility
+Use Unlisted, Hidden, or appropriate sharing settings so the log is accessible but controlled.
+Evidence type
+Keep the primary evidence in video format whenever possible.
+Screenshots
+Capture images from the video later if needed for a log album or archive.
+
+If a user cannot upload a video because of Discord's upload limit, request an external host such as YouTube, Google Drive, or another approved platform. The goal is not convenience alone. The goal is traceability and verification.
+
+Punishment Requests, Temporary Timewasting bans, and Marketplace punishments are NOT to be uploaded to HD. Only upload permanent timewasting bans to HD.
+
+Demonstration: https://youtu.be/7WukB248sLE?si=b8PTN3R2K4jQ2OeS
+Tutorial on Blurring: https://youtu.be/BUCQ3skYqyA?si=SLEG7Z7RZBYWwk8O
+
+Blurring note
+If your department says blurring is optional now, keep it optional. When blur is used anyway, focus on real personal data such as names, emails, payment-service usernames, addresses, phone numbers, card information.
+
+11. Punishments and Outcome Scaling
+Punishment should match the situation. Not every case is the same, and not every case should end the same way. Severity depends on the scam type, whether the user refunded, whether the case was malicious, and whether there is history showing a pattern.
+Case type
+Typical outcome
+Time-wasting, ghosting, refusal to refund
+Permanent ban, appeal possible once the victim is refunded or paid.
+Refund made after investigation
+Warning or no punishment depending on context
+Stolen assets, free models, fake reviews, plagiarism
+60 to 90 day temporary ban, second offense becomes permanent
+Developer fails to complete work and no payment was sent
+Use discretionary scaling based on duration and severity
+Developer fails to complete work and no payment was sent.
+Suggested response
+1 to 2 days
+Warning
+3 to 7 days
+5 to 7 day ban
+7 to 14 days
+14 to 21 day ban
+14 to 30 days
+3 to 6 month ban
+30+ days
+Permanent ban
+
+This scaling is discretionary, not automatic. You still need to look at the context.
+
+We do NOT do Marketplace (MP) Bans anymore.
+12. Reporting and Escalation
+Escalations are for difficult, sensitive, or conflict-heavy situations. If a user in the report asks for the case to be elevated to an SSI, follow that instruction. If the report involves you personally or involves a close friend, step back and let someone else handle it.
+Do not investigate your own report.
+Do not force yourself into a case where bias could be questioned.
+Use senior staff when the conflict is personal, unusual, or disputed.
+Escalate when a report needs authority beyond your rank.
+13. Mistakes, Strikes, and Discipline
+The department uses discipline to keep standards consistent. Mistakes are typically issues that need correction and time-based tracking. Strikes are more serious and usually point to broader reliability or behavior concerns. SSI+ can issue disciplinary actions.
+Mistake
+Duration / note
+Leaving a ticket inactive or not logging for too long
+Usually lasts 30 days
+Grammar errors in tickets
+Usually lasts 30 days
+Missing scam investigation meetings without a valid reason
+Lasts until the next meeting
+Missing quota
+Usually lasts 14 days
+Repeated denied logs from HD
+Usually lasts 30 days
+Strike reason
+Typical consequence
+Too many mistakes
+Retraining, usually lasting 30 days
+Low engagement or inactivity
+30 day consequence
+Negative behavior or toxicity
+30 day consequence
+Abusing the inactivity system
+30 day consequence
+Talking negatively about the department after warning
+30 day consequence
+Small amounts of bias in tickets or appeals
+60 day consequence
+Missing quota repeatedly or abusing quota
+28 day consequence
+Banning someone in error and failing to correct it
+30 day consequence
+
+
+Demotions Triggers
+Common demotion triggers include too many strikes(3+), leaking staff information, taking bribes or incentives, and repeated bias in cases.
+
+
+14. Resources and Formats
+The department relies on a number of tools for review, verification, background checks, and documentation. You do not need to memorize every tool on day one, but you should know what kinds of problems each category of tool solves.
+Resource
+Use
+RoDevs Commission Guide
+Tips & Tricks for commissions as well as Do & Don'ts
+HD Scam Logs
+Background checks
+RIA Scam Logs
+Background checks
+VirusTotal
+Scanner for viruses in links & files
+Grammarly
+Grammar correction
+EzGif Video Reverser
+Reversing videos
+EzGif Video Slower
+Slowing down video
+Roblox Leaked Games
+For stolen work detection
+Yandex
+Reverse searching, stolen work detection
+TinEye
+Reverse searching, stolen work detection
+Google Reverse Image Search
+Reverse searching, stolen work detection
+SightEngine
+Detecting AI-generated work
+SynthID
+Common Scam Portfolios
+Topology guides for detecting AI-generated models
+cobalt
+Video downloader
+CnvMP3
+YouTube downloader
+
+
+
+Use the resources responsibly. Some tools are for internal staff use only and should not be shared carelessly. The point of the tool list is to ease your workload.
+
+Misc:
+Banning Compromised Accounts
+Compromised accounts will be fairly obvious to spot, and will send an image relating to a Mr Beast twitter post, or an Elon Musk twitter post, with 4 images explaining "steps" to claim free money. You must only do this on accounts that are clearly compromised!
+
+This is the only time you can issue punishments for something outside of the Scam Investigator guidelines. Scam Investigators must not interfere in punishments outside of compromised accounts and bans correlating from scams no matter the situation. You must ping a moderator for cases outside of the above.
+*Exception for NSFW in VCs per announcement.
+
+
+If you come across this in server channels, you should remove the user immediately.
+To do so, follow the below steps
+- Right click the message
+- Select apps
+- Select RoDevs
+- Select " Compromised Account "
+
+This will ban the user for one minute and send them a message explaining why, and an invite to rejoin the server. All departments have the ability to do this. If you are confused, please ping a moderator in staff-chat. If you are found misusing this, punishment will follow.
+
+Formats:
+Formats exist to make your life easier and to provide you with a foundation from which you can conduct operations. All the formats in the SI department are located in the resources & open-resources channels.
+
+15. Frequently Asked Questions
+Q: What should I do if I do not understand a ticket?
+A: Ask questions early. It is better to clarify the case before acting than to clean up a wrong decision later.
+Q: What if the accused claims they own the asset?
+A: Ask for proof. Do not accept a claim without evidence.
+Q: What if the victim cannot provide full video evidence?
+A: Request an external upload. If usable evidence still cannot be provided, drop the report.
+Q: What if both sides are partly wrong?
+A: Use judgment. Sometimes a warning, compromise, or case drop is more appropriate than a harsh punishment.
+Q: What if the case is personal or involves a friend?
+A: Step aside and let someone else handle it.
+Q: What do I do if my scam log gets denied?
+A: Inform an SSI to talk to HD. Never contact HD staff directly unless given permission by a DH+.
+Q: Why can't I delete my appeal?
+A: For deleting a ban appeal once logged, you would hit the 'Delete Ticket' button at the top, then when it prompts you, click Delete again.
+Q: How do I log PR ban appeals?
+A: Currently, PR ban appeals can't be logged through the bot, so ping an SSI to log it manually for you.
+Q: Do you use /scam create on PRs?
+A: No, just ban and accept the punishment request.
+Q: What do I do if the accused isn't in the server?
+A: If the accused scammer isn't in the server and the evidence is sufficient, you can punish them outright.
+Q: What do I do if the victim isn't in the server?
+A: Drop the investigation.
+Q: What do I do when someone makes a report on someone else's behalf?
+A: If someone reports someone else on their behalf, we do not take the report unless the victim explicitly gave them permission to do so.
+Q: Why can't I delete my ticket?
+A: Currently, tickets have a prevailing issue regarding deletion, so ping the Head Scam Investigator to manually delete the ticket for you.
+Q: What do I do if there are racial slurs in the ticket?
+A: Conclude the ticket normally then transfer it to moderation department.
+
+16. Policies & Changes!
+Departmental Order #001 - 12/25/25: Updating Senior Guidelines [Effective]
+Departmental Order #002 - 2/9/26: Blurring requirement rescinded; now optional. [Effective]
+Departmental Order #003 - 2/28/26: Implementation of SynthID for images generated with Gemini. [Effective]
+Departmental Order #004 - 3/23/26: Depreciation of old handbook & rollout of this document. [Effective]
+Departmental Order #005 - 3/23/26: Reorganization of quota from a bi-weekly basis to a monthly basis. [Effective]
+Departmental Order #005 -3/31/26: Rescission of the cherry-picking rule. [Effective]
+17. Final Notes and Acknowledgment
+The best investigators are not the fastest ones. They are the ones who are consistent, calm, and fair even when the case is annoying or the people involved are difficult. If you follow the handbook, keep your evidence clean, and ask for help when needed, you will improve quickly.
+"""
 
 def ask_ai(question: str) -> str:
-    combined_docs = "\n\n".join(
-        f"=== {name} ===\n{text}" for name, text in handbook_text_cache.items()
-    )
-
     system_prompt = (
         "You are a helpful assistant answering questions for Scam Investigator staff "
         "based ONLY on the handbook content provided below. If the answer isn't in the "
-        "handbooks, say so clearly rather than guessing. Keep answers concise and practical.\n\n"
-        f"{combined_docs}"
+        "handbook, say so clearly rather than guessing. Keep answers concise and practical.\n\n"
+        f"=== SI General Handbook ===\n{HANDBOOK_TEXT}"
     )
 
     response = openai_client.chat.completions.create(
@@ -147,7 +569,6 @@ def ask_ai(question: str) -> str:
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    load_handbooks()
     try:
         bot.tree.copy_global_to(guild=GUILD_ID)
         synced = await bot.tree.sync(guild=GUILD_ID)
