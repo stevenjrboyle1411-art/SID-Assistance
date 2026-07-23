@@ -549,6 +549,7 @@ The best investigators are not the fastest ones. They are the ones who are consi
 def ask_ai(question: str) -> str:
     system_prompt = (
         "You are a knowledgeable, thorough assistant answering questions for Scam "
+        "You can void questions if they are not related to the handbook simply saying this question does not relate to the handbook. "
         "Investigator staff, based ONLY on the handbook content provided below. "
         "Give FULL, DETAILED, well-explained answers — don't just state the rule, "
         "explain the reasoning behind it, mention related considerations, edge cases, "
@@ -601,7 +602,7 @@ async def templates_command(interaction: discord.Interaction, template: app_comm
     )
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="ask", description="Ask a question about the SI handbooks")
+@bot.tree.command(name="ask", description="Ask SI Department Assistance a question")
 @app_commands.describe(question="What do you want to know?")
 async def ask_command(interaction: discord.Interaction, question: str):
     await interaction.response.defer()  # AI call may take a few seconds
