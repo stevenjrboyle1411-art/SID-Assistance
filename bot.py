@@ -757,48 +757,66 @@ def download_video(url: str, dest_dir: str) -> str:
     raise RuntimeError("Video download completed but no output file was found.")
 
 def extract_keyframes(video_path: str, out_dir: str):
-    """Extracts frames only where the visible content actually changes
-    (scene-change detection), plus the very first frame. This avoids
-    capturing hundreds of near-identical frames while someone scrolls slowly,
-    and keeps a long video's frame count manageable."""
-    log_path = os.path.join(out_dir, "frames.log")
-    frame_pattern = os.path.join(out_dir, "frame_%04d.png")
+    """Extracts frames two ways and merges them:
+    1. Scene-change detection (catches moments where content visibly changes)
+    2. Periodic sampling every 4 seconds (a safety net in case scene detection
+       misses gradual/slow scrolling, which can happen with compressed video)
+    This dual approach is more reliable than scene detection alone."""
 
-    cmd = [
+    scene_log = os.path.join(out_dir, "scene.log")
+    scene_pattern = os.path.join(out_dir, "scene_%04d.png")
+    cmd_scene = [
         "ffmpeg", "-i", video_path,
-        "-vf", "select='gt(scene,0.25)',showinfo",
+        "-vf", "select='gt(scene,0.15)',showinfo",
         "-vsync", "vfr",
-        frame_pattern
+        scene_pattern
     ]
-    with open(log_path, "w") as log_file:
-        subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, timeout=900)
+    with open(scene_log, "w") as log_file:
+        subprocess.run(cmd_scene, stdout=log_file, stderr=subprocess.STDOUT, timeout=900)
 
-    timestamps = []
-    with open(log_path, "r", errors="ignore") as f:
+    scene_timestamps = []
+    with open(scene_log, "r", errors="ignore") as f:
         for line in f:
             match = re.search(r"pts_time:(\d+\.?\d*)", line)
             if match:
-                timestamps.append(float(match.group(1)))
+                scene_timestamps.append(float(match.group(1)))
 
-    frame_files = sorted(f for f in os.listdir(out_dir) if f.startswith("frame_"))
-    frames = list(zip(timestamps, frame_files))
+    scene_files = sorted(f for f in os.listdir(out_dir) if f.startswith("scene_"))
+    scene_frames = list(zip(scene_timestamps, scene_files))
+    print(f"[extract_keyframes] scene-detection found {len(scene_frames)} frames")
 
-    # Always include the very first moment of the video too
-    if not frames or frames[0][0] > 1.0:
-        first_frame_path = os.path.join(out_dir, "frame_first.png")
-        subprocess.run(
-            ["ffmpeg", "-i", video_path, "-frames:v", "1", first_frame_path],
-            capture_output=True, timeout=60
-        )
-        if os.path.exists(first_frame_path):
-            frames.insert(0, (0.0, "frame_first.png"))
+    # Periodic fallback: one frame every 4 seconds across the whole video
+    periodic_pattern = os.path.join(out_dir, "periodic_%04d.png")
+    cmd_periodic = [
+        "ffmpeg", "-i", video_path,
+        "-vf", "fps=1/4",
+        periodic_pattern
+    ]
+    subprocess.run(cmd_periodic, capture_output=True, timeout=900)
+    periodic_files = sorted(f for f in os.listdir(out_dir) if f.startswith("periodic_"))
+    periodic_frames = [(i * 4.0, fname) for i, fname in enumerate(periodic_files)]
+    print(f"[extract_keyframes] periodic sampling found {len(periodic_frames)} frames")
+
+    all_frames = scene_frames + periodic_frames
+    all_frames.sort(key=lambda x: x[0])
+
+    # Deduplicate frames that landed within 1.5s of each other
+    deduped = []
+    last_ts = -999
+    for ts, fname in all_frames:
+        if ts - last_ts >= 1.5:
+            deduped.append((ts, fname))
+            last_ts = ts
+
+    print(f"[extract_keyframes] {len(deduped)} frames after merging + deduping")
 
     # Cap total frames evenly across the video if there are too many
-    if len(frames) > MAX_FRAMES:
-        step = len(frames) / MAX_FRAMES
-        frames = [frames[int(i * step)] for i in range(MAX_FRAMES)]
+    if len(deduped) > MAX_FRAMES:
+        step = len(deduped) / MAX_FRAMES
+        deduped = [deduped[int(i * step)] for i in range(MAX_FRAMES)]
+        print(f"[extract_keyframes] capped down to {len(deduped)} frames")
 
-    return [(ts, os.path.join(out_dir, fname)) for ts, fname in frames]
+    return [(ts, os.path.join(out_dir, fname)) for ts, fname in deduped]
 
 def format_timestamp(seconds: float) -> str:
     m = int(seconds // 60)
@@ -860,7 +878,12 @@ async def analyze_video(url: str, status_callback=None) -> str:
         async def process_frame(ts, path):
             async with semaphore:
                 label = format_timestamp(ts)
-                text = await asyncio.to_thread(read_frame_text, path, label)
+                try:
+                    text = await asyncio.to_thread(read_frame_text, path, label)
+                except Exception as e:
+                    print(f"[process_frame] error on frame at {label}: {e}")
+                    text = ""
+                print(f"[process_frame] {label}: {len(text)} chars -> {text[:80]!r}")
                 return ts, label, text
 
         results = await asyncio.gather(*[process_frame(ts, path) for ts, path in frames])
