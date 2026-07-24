@@ -744,10 +744,20 @@ def download_video(url: str, dest_dir: str) -> str:
     direct .mp4 links, etc.) using yt-dlp, which handles the vast majority of
     hosting sites via its generic + site-specific extractors."""
     output_template = os.path.join(dest_dir, "input.%(ext)s")
-    result = subprocess.run(
-        ["yt-dlp", "-f", "mp4/best", "-o", output_template, url],
-        capture_output=True, text=True, timeout=900
-    )
+    cmd = ["yt-dlp", "-f", "mp4/best", "-o", output_template]
+
+    # If cookies were provided via env var, write them to a temp file and use them.
+    # This is often required for YouTube, which blocks anonymous cloud-server requests.
+    ytdlp_cookies = os.environ.get("YTDLP_COOKIES")
+    if ytdlp_cookies:
+        cookies_path = os.path.join(dest_dir, "cookies.txt")
+        with open(cookies_path, "w") as f:
+            f.write(ytdlp_cookies)
+        cmd += ["--cookies", cookies_path]
+
+    cmd.append(url)
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     if result.returncode != 0:
         raise RuntimeError(f"yt-dlp failed: {result.stderr[-1000:]}")
 
