@@ -43,6 +43,18 @@ def has_allowed_role():
         return True
     return app_commands.check(predicate)
 
+INVESTIGATE_ROLE_ID = 995665312827588670
+
+def has_investigate_role():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        member_role_ids = {role.id for role in interaction.user.roles}
+        if INVESTIGATE_ROLE_ID not in member_role_ids:
+            raise app_commands.CheckFailure(
+                "You don't have permission to use this command."
+            )
+        return True
+    return app_commands.check(predicate)
+
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
@@ -1006,7 +1018,7 @@ async def log_error_to_channel(video_link: str, error: Exception, user: discord.
         print(f"[log_error_to_channel] Failed to send log: {e}")
 
 @bot.tree.command(name="investigate", description="Analyze a scam evidence video and get a full case breakdown")
-@has_allowed_role()
+@has_investigate_role()
 @app_commands.describe(video_link="Link to the evidence video (YouTube, Drive, direct link, etc.)")
 async def investigate_command(interaction: discord.Interaction, video_link: str):
     await interaction.response.defer()
