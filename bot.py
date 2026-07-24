@@ -946,13 +946,28 @@ async def analyze_video(url: str, status_callback=None) -> str:
 
         response = openai_client.chat.completions.create(
             model="gpt-5.6-luna",
-            max_completion_tokens=3000,
+            max_completion_tokens=6000,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "Please write the full case breakdown."}
             ]
         )
         content = response.choices[0].message.content
+
+        if not content or not content.strip():
+            # Fallback: retry with a non-reasoning model that won't burn the
+            # token budget on invisible "thinking" before writing anything.
+            print("[analyze_video] gpt-5.6-luna returned empty, falling back to gpt-4o-mini")
+            fallback_response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_completion_tokens=3000,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Please write the full case breakdown."}
+                ]
+            )
+            content = fallback_response.choices[0].message.content
+
         if not content or not content.strip():
             return "I processed the video but couldn't generate a breakdown. Try again, or the video may be too long/complex for one pass."
         return content
