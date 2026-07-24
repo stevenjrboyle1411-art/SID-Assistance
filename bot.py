@@ -929,17 +929,22 @@ async def analyze_video(url: str, status_callback=None) -> str:
             await status_callback("Writing the case breakdown...")
 
         system_prompt = (
-            "You are an experienced Scam Investigator writing a full case breakdown, "
+            "You are an experienced Scam Investigator writing a case breakdown, "
             "based on a timestamped timeline transcribed from a victim's evidence video "
             "(a screen recording of their DMs with the accused). You also have the "
             "department's handbook for reference.\n\n"
-            "Write a detailed breakdown that includes:\n"
-            "1. A summary of what happened, in order.\n"
-            "2. Specific timestamps (MM:SS) of key moments worth reviewing, with a short "
-            "note on why each matters.\n"
-            "3. An assessment of whether this fits a scam/rule violation per the handbook, "
-            "and which category (e.g. time-wasting, stolen assets, ghosting, etc.).\n"
-            "4. A recommended punishment, using the handbook's punishment scaling as the basis.\n\n"
+            "Write a CONCISE summary, not an exhaustive report. Aim for roughly 1.5 pages "
+            "of text total. Do NOT use markdown tables under any circumstances. Use short "
+            "paragraphs and bullet points only.\n\n"
+            "Include:\n"
+            "1. A brief summary of what happened (2-4 sentences).\n"
+            "2. The 3-5 MOST important timestamps (MM:SS) as a short bullet list, each with "
+            "one line explaining why it matters. Do not list every timestamp, only the ones "
+            "that actually matter to the decision.\n"
+            "3. A short assessment of whether this fits a scam/rule violation per the "
+            "handbook, and which category.\n"
+            "4. A recommended punishment, based on the handbook's punishment scaling.\n\n"
+            "Stay concise throughout while still giving enough context to be useful.\n\n"
             f"=== SI General Handbook ===\n{HANDBOOK_TEXT}\n\n"
             f"=== Video Timeline ===\n{timeline}"
         )
@@ -1023,11 +1028,10 @@ async def investigate_command(interaction: discord.Interaction, video_link: str)
         return
 
     chunk_size = 4000
-    max_chunks = 4  # case breakdowns can run longer than a normal /ask answer
+    max_total_chars = 6000  # roughly 1.5 chunks
+    if len(breakdown) > max_total_chars:
+        breakdown = breakdown[:max_total_chars - 60] + "\n\n*(Response trimmed to keep things concise.)*"
     chunks = [breakdown[i:i + chunk_size] for i in range(0, len(breakdown), chunk_size)] or [""]
-    if len(chunks) > max_chunks:
-        chunks = chunks[:max_chunks]
-        chunks[-1] = chunks[-1][:chunk_size - 60] + "\n\n*(Response truncated.)*"
 
     await update_status("Analysis complete.")
 
