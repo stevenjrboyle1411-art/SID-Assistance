@@ -957,10 +957,12 @@ FRIENDLY_ERROR_MESSAGE = (
 )
 
 async def log_error_to_channel(video_link: str, error: Exception, user: discord.User):
-    log_channel = bot.get_channel(ERROR_LOG_CHANNEL_ID)
-    if log_channel is None:
-        print(f"[log_error_to_channel] Could not find log channel {ERROR_LOG_CHANNEL_ID}")
+    try:
+        log_channel = bot.get_channel(ERROR_LOG_CHANNEL_ID) or await bot.fetch_channel(ERROR_LOG_CHANNEL_ID)
+    except Exception as e:
+        print(f"[log_error_to_channel] Could not fetch log channel {ERROR_LOG_CHANNEL_ID}: {e}")
         return
+
     embed = discord.Embed(
         title="/investigate failure",
         color=discord.Color.red()
