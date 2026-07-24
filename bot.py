@@ -840,7 +840,7 @@ def read_frame_text(image_path: str, timestamp_label: str) -> str:
         b64_image = base64.b64encode(f.read()).decode("utf-8")
 
     response = openai_client.chat.completions.create(
-        model="gpt-5.6-luna",
+        model="gpt-4o-mini",
         max_completion_tokens=500,
         messages=[
             {
@@ -889,6 +889,8 @@ async def analyze_video(url: str, status_callback=None) -> str:
         # Limit concurrent vision calls to avoid rate limits
         semaphore = asyncio.Semaphore(5)
 
+        frame_errors = []
+
         async def process_frame(ts, path):
             async with semaphore:
                 label = format_timestamp(ts)
@@ -896,6 +898,7 @@ async def analyze_video(url: str, status_callback=None) -> str:
                     text = await asyncio.to_thread(read_frame_text, path, label)
                 except Exception as e:
                     print(f"[process_frame] error on frame at {label}: {e}")
+                    frame_errors.append(f"{label}: {e}")
                     text = ""
                 print(f"[process_frame] {label}: {len(text)} chars -> {text[:80]!r}")
                 return ts, label, text
@@ -909,10 +912,16 @@ async def analyze_video(url: str, status_callback=None) -> str:
                 timeline_lines.append(f"[{label}] {text.strip()}")
 
         if not timeline_lines:
-            raise VideoUnreadableError(
-                f"No readable content extracted from {len(frames)} frames (all frames "
-                f"returned empty or 'no new content')."
-            )
+            if frame_errors:
+                sample = " | ".join(frame_errors[:3])
+                raise VideoUnreadableError(
+                    f"All {len(frames)} frames failed with errors. Sample: {sample}"
+                )
+            else:
+                raise VideoUnreadableError(
+                    f"No readable content extracted from {len(frames)} frames (all frames "
+                    f"returned empty or 'no new content', no API errors)."
+                )
 
         timeline = "\n\n".join(timeline_lines)
 
