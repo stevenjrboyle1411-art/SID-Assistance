@@ -769,7 +769,7 @@ def download_video(url: str, dest_dir: str) -> str:
 
     cmd.append(url)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)  # 4 hour ceiling, effectively unlimited
     if result.returncode != 0:
         raise RuntimeError(f"yt-dlp failed: {result.stderr[-1000:]}")
 
@@ -794,7 +794,7 @@ def extract_keyframes(video_path: str, out_dir: str):
         scene_pattern
     ]
     with open(scene_log, "w") as log_file:
-        subprocess.run(cmd_scene, stdout=log_file, stderr=subprocess.STDOUT, timeout=900)
+        subprocess.run(cmd_scene, stdout=log_file, stderr=subprocess.STDOUT, timeout=14400)
 
     scene_timestamps = []
     with open(scene_log, "r", errors="ignore") as f:
@@ -814,7 +814,7 @@ def extract_keyframes(video_path: str, out_dir: str):
         "-vf", "fps=1/4",
         periodic_pattern
     ]
-    subprocess.run(cmd_periodic, capture_output=True, timeout=900)
+    subprocess.run(cmd_periodic, capture_output=True, timeout=14400)
     periodic_files = sorted(f for f in os.listdir(out_dir) if f.startswith("periodic_"))
     periodic_frames = [(i * 4.0, fname) for i, fname in enumerate(periodic_files)]
     print(f"[extract_keyframes] periodic sampling found {len(periodic_frames)} frames")
@@ -853,16 +853,16 @@ def read_frame_text(image_path: str, timestamp_label: str) -> str:
 
     response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
-        max_completion_tokens=500,
+        max_completion_tokens=300,
         messages=[
             {
                 "role": "system",
                 "content": (
                     "You are transcribing a frame from a screen recording of a Discord "
-                    "conversation, being reviewed as scam evidence. Transcribe ALL visible "
-                    "text exactly: usernames, message content, prices, payment details, "
-                    "timestamps shown on-screen. If nothing new or relevant is visible "
-                    "(e.g. blank/transition frame), say 'No new content.' Be concise but complete."
+                    "conversation, being reviewed as scam evidence. Transcribe the KEY visible "
+                    "text only: usernames, message content, prices, payment details. Be brief, "
+                    "just the facts, no extra commentary. If nothing new or relevant is visible "
+                    "(e.g. blank/transition frame), say 'No new content.'"
                 )
             },
             {
@@ -963,7 +963,7 @@ async def analyze_video(url: str, status_callback=None) -> str:
 
         response = openai_client.chat.completions.create(
             model="gpt-5.6-luna",
-            max_completion_tokens=6000,
+            max_completion_tokens=4500,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "Please write the full case breakdown."}
@@ -1024,12 +1024,18 @@ async def investigate_command(interaction: discord.Interaction, video_link: str)
     await interaction.response.defer()
 
     status_message = await interaction.followup.send("Starting video analysis...", wait=True)
+    channel = status_message.channel  # regular channel object, no interaction-token expiry
 
     async def update_status(text: str):
         try:
             await status_message.edit(content=text)
         except Exception:
-            pass
+            # Interaction token may have expired on a very long-running video -
+            # fall back to a plain channel message instead of failing silently.
+            try:
+                await channel.send(text)
+            except Exception as e2:
+                print(f"[update_status] failed to send status: {e2}")
 
     try:
         breakdown = await analyze_video(video_link, status_callback=update_status)
@@ -1047,15 +1053,17 @@ async def investigate_command(interaction: discord.Interaction, video_link: str)
 
     await update_status("Analysis complete.")
 
+    # Sent via the channel directly (not interaction.followup) so this always
+    # works even if the video took long enough for the interaction token to expire.
     first_embed = discord.Embed(
         title="Case Breakdown",
         description=chunks[0],
         color=discord.Color.blurple()
     )
-    await interaction.followup.send(embed=first_embed)
+    await channel.send(embed=first_embed)
 
     for chunk in chunks[1:]:
         follow_embed = discord.Embed(description=chunk, color=discord.Color.blurple())
-        await interaction.followup.send(embed=follow_embed)
+        await channel.send(embed=follow_embed)
 
 bot.run(TOKEN)
