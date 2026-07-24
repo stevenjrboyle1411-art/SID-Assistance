@@ -2,6 +2,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import os
+import base64
+import re
+import subprocess
+import tempfile
+import asyncio
 from openai import OpenAI
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
@@ -158,13 +163,6 @@ Naming
 Rename logs to Scam Log [Ticket Number].
 
 
-Steven (_unlcked) is the current head scam investigator, otherwise known as HSI
-bloxy is a current senior scam investigator, otherwise known as ssi
-devshark is a current senior scam investigator, otherwise known as ssi
-smallz is a current senior scam investigator, otherwise known as ssi
-
-steven smells
-scam investigators ( SI ) are better than post approvers ( PA ) 
 1. Introduction
 
 SI Code Of Conduct
@@ -736,5 +734,214 @@ async def updateresources_command(interaction: discord.Interaction, message_id: 
         await interaction.response.send_message("Resources message updated.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Couldn't update that message: {e}", ephemeral=True)
+
+# ---------- Video investigation pipeline ----------
+
+MAX_FRAMES = 60  # hard cap so a very long video doesn't run away with cost/time
+
+def download_video(url: str, dest_dir: str) -> str:
+    """Downloads a video from virtually any link (YouTube, Drive, Discord CDN,
+    direct .mp4 links, etc.) using yt-dlp, which handles the vast majority of
+    hosting sites via its generic + site-specific extractors."""
+    output_template = os.path.join(dest_dir, "input.%(ext)s")
+    result = subprocess.run(
+        ["yt-dlp", "-f", "mp4/best", "-o", output_template, url],
+        capture_output=True, text=True, timeout=900
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"yt-dlp failed: {result.stderr[-1000:]}")
+
+    for f in os.listdir(dest_dir):
+        if f.startswith("input."):
+            return os.path.join(dest_dir, f)
+    raise RuntimeError("Video download completed but no output file was found.")
+
+def extract_keyframes(video_path: str, out_dir: str):
+    """Extracts frames only where the visible content actually changes
+    (scene-change detection), plus the very first frame. This avoids
+    capturing hundreds of near-identical frames while someone scrolls slowly,
+    and keeps a long video's frame count manageable."""
+    log_path = os.path.join(out_dir, "frames.log")
+    frame_pattern = os.path.join(out_dir, "frame_%04d.png")
+
+    cmd = [
+        "ffmpeg", "-i", video_path,
+        "-vf", "select='gt(scene,0.25)',showinfo",
+        "-vsync", "vfr",
+        frame_pattern
+    ]
+    with open(log_path, "w") as log_file:
+        subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, timeout=900)
+
+    timestamps = []
+    with open(log_path, "r", errors="ignore") as f:
+        for line in f:
+            match = re.search(r"pts_time:(\d+\.?\d*)", line)
+            if match:
+                timestamps.append(float(match.group(1)))
+
+    frame_files = sorted(f for f in os.listdir(out_dir) if f.startswith("frame_"))
+    frames = list(zip(timestamps, frame_files))
+
+    # Always include the very first moment of the video too
+    if not frames or frames[0][0] > 1.0:
+        first_frame_path = os.path.join(out_dir, "frame_first.png")
+        subprocess.run(
+            ["ffmpeg", "-i", video_path, "-frames:v", "1", first_frame_path],
+            capture_output=True, timeout=60
+        )
+        if os.path.exists(first_frame_path):
+            frames.insert(0, (0.0, "frame_first.png"))
+
+    # Cap total frames evenly across the video if there are too many
+    if len(frames) > MAX_FRAMES:
+        step = len(frames) / MAX_FRAMES
+        frames = [frames[int(i * step)] for i in range(MAX_FRAMES)]
+
+    return [(ts, os.path.join(out_dir, fname)) for ts, fname in frames]
+
+def format_timestamp(seconds: float) -> str:
+    m = int(seconds // 60)
+    s = int(seconds % 60)
+    return f"{m:02d}:{s:02d}"
+
+def read_frame_text(image_path: str, timestamp_label: str) -> str:
+    """Sends a single frame to a vision-capable model and asks it to transcribe
+    everything visible: chat messages, usernames, and anything relevant."""
+    with open(image_path, "rb") as f:
+        b64_image = base64.b64encode(f.read()).decode("utf-8")
+
+    response = openai_client.chat.completions.create(
+        model="gpt-5.6-luna",
+        max_completion_tokens=500,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are transcribing a frame from a screen recording of a Discord "
+                    "conversation, being reviewed as scam evidence. Transcribe ALL visible "
+                    "text exactly: usernames, message content, prices, payment details, "
+                    "timestamps shown on-screen. If nothing new or relevant is visible "
+                    "(e.g. blank/transition frame), say 'No new content.' Be concise but complete."
+                )
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Frame at video timestamp {timestamp_label}:"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_image}"}}
+                ]
+            }
+        ]
+    )
+    return response.choices[0].message.content or ""
+
+async def analyze_video(url: str, status_callback=None) -> str:
+    """Full pipeline: download -> extract keyframes -> read each frame ->
+    compile timeline -> generate a scam investigator case breakdown."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        if status_callback:
+            await status_callback("Downloading video...")
+        video_path = await asyncio.to_thread(download_video, url, tmp_dir)
+
+        if status_callback:
+            await status_callback("Scanning for key moments...")
+        frames = await asyncio.to_thread(extract_keyframes, video_path, tmp_dir)
+
+        if not frames:
+            return "I couldn't extract any usable frames from that video. Please check the link or try a different upload."
+
+        if status_callback:
+            await status_callback(f"Reading {len(frames)} key moments from the video...")
+
+        # Limit concurrent vision calls to avoid rate limits
+        semaphore = asyncio.Semaphore(5)
+
+        async def process_frame(ts, path):
+            async with semaphore:
+                label = format_timestamp(ts)
+                text = await asyncio.to_thread(read_frame_text, path, label)
+                return ts, label, text
+
+        results = await asyncio.gather(*[process_frame(ts, path) for ts, path in frames])
+        results.sort(key=lambda r: r[0])
+
+        timeline_lines = []
+        for ts, label, text in results:
+            if text.strip() and "no new content" not in text.lower():
+                timeline_lines.append(f"[{label}] {text.strip()}")
+        timeline = "\n\n".join(timeline_lines) if timeline_lines else "(No readable content extracted.)"
+
+        if status_callback:
+            await status_callback("Writing the case breakdown...")
+
+        system_prompt = (
+            "You are an experienced Scam Investigator writing a full case breakdown, "
+            "based on a timestamped timeline transcribed from a victim's evidence video "
+            "(a screen recording of their DMs with the accused). You also have the "
+            "department's handbook for reference.\n\n"
+            "Write a detailed breakdown that includes:\n"
+            "1. A summary of what happened, in order.\n"
+            "2. Specific timestamps (MM:SS) of key moments worth reviewing, with a short "
+            "note on why each matters.\n"
+            "3. An assessment of whether this fits a scam/rule violation per the handbook, "
+            "and which category (e.g. time-wasting, stolen assets, ghosting, etc.).\n"
+            "4. A recommended punishment, using the handbook's punishment scaling as the basis.\n\n"
+            f"=== SI General Handbook ===\n{HANDBOOK_TEXT}\n\n"
+            f"=== Video Timeline ===\n{timeline}"
+        )
+
+        response = openai_client.chat.completions.create(
+            model="gpt-5.6-luna",
+            max_completion_tokens=3000,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Please write the full case breakdown."}
+            ]
+        )
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            return "I processed the video but couldn't generate a breakdown. Try again, or the video may be too long/complex for one pass."
+        return content
+
+@bot.tree.command(name="investigate", description="Analyze a scam evidence video and get a full case breakdown")
+@has_allowed_role()
+@app_commands.describe(video_link="Link to the evidence video (YouTube, Drive, direct link, etc.)")
+async def investigate_command(interaction: discord.Interaction, video_link: str):
+    await interaction.response.defer()
+
+    status_message = await interaction.followup.send("Starting video analysis...", wait=True)
+
+    async def update_status(text: str):
+        try:
+            await status_message.edit(content=text)
+        except Exception:
+            pass
+
+    try:
+        breakdown = await analyze_video(video_link, status_callback=update_status)
+    except Exception as e:
+        await update_status(f"Something went wrong analyzing that video: {e}")
+        return
+
+    chunk_size = 4000
+    max_chunks = 4  # case breakdowns can run longer than a normal /ask answer
+    chunks = [breakdown[i:i + chunk_size] for i in range(0, len(breakdown), chunk_size)] or [""]
+    if len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks]
+        chunks[-1] = chunks[-1][:chunk_size - 60] + "\n\n*(Response truncated.)*"
+
+    await update_status("Analysis complete.")
+
+    first_embed = discord.Embed(
+        title="Case Breakdown",
+        description=chunks[0],
+        color=discord.Color.blurple()
+    )
+    await interaction.followup.send(embed=first_embed)
+
+    for chunk in chunks[1:]:
+        follow_embed = discord.Embed(description=chunk, color=discord.Color.blurple())
+        await interaction.followup.send(embed=follow_embed)
 
 bot.run(TOKEN)
