@@ -744,7 +744,7 @@ def download_video(url: str, dest_dir: str) -> str:
     direct .mp4 links, etc.) using yt-dlp, which handles the vast majority of
     hosting sites via its generic + site-specific extractors."""
     output_template = os.path.join(dest_dir, "input.%(ext)s")
-    cmd = ["yt-dlp", "-f", "mp4/best", "-o", output_template]
+    cmd = ["yt-dlp", "-f", "mp4/best", "--remote-components", "ejs:github", "-o", output_template]
 
     # If cookies were provided via env var, write them to a temp file and use them.
     # This is often required for YouTube, which blocks anonymous cloud-server requests.
