@@ -864,6 +864,10 @@ def read_frame_text(image_path: str, timestamp_label: str) -> str:
     )
     return response.choices[0].message.content or ""
 
+class VideoUnreadableError(Exception):
+    """Raised when no usable content could be extracted from a video."""
+    pass
+
 async def analyze_video(url: str, status_callback=None) -> str:
     """Full pipeline: download -> extract keyframes -> read each frame ->
     compile timeline -> generate a scam investigator case breakdown."""
@@ -903,7 +907,14 @@ async def analyze_video(url: str, status_callback=None) -> str:
         for ts, label, text in results:
             if text.strip() and "no new content" not in text.lower():
                 timeline_lines.append(f"[{label}] {text.strip()}")
-        timeline = "\n\n".join(timeline_lines) if timeline_lines else "(No readable content extracted.)"
+
+        if not timeline_lines:
+            raise VideoUnreadableError(
+                f"No readable content extracted from {len(frames)} frames (all frames "
+                f"returned empty or 'no new content')."
+            )
+
+        timeline = "\n\n".join(timeline_lines)
 
         if status_callback:
             await status_callback("Writing the case breakdown...")
@@ -937,6 +948,32 @@ async def analyze_video(url: str, status_callback=None) -> str:
             return "I processed the video but couldn't generate a breakdown. Try again, or the video may be too long/complex for one pass."
         return content
 
+ERROR_LOG_CHANNEL_ID = 1166202561846583416
+
+FRIENDLY_ERROR_MESSAGE = (
+    "Sadly, I was unable to read this video. This error has been logged and will be "
+    "reviewed manually to see where I went wrong. Please retry, if I continue to error, "
+    "I suggest watching the video manually. Very sorry!"
+)
+
+async def log_error_to_channel(video_link: str, error: Exception, user: discord.User):
+    log_channel = bot.get_channel(ERROR_LOG_CHANNEL_ID)
+    if log_channel is None:
+        print(f"[log_error_to_channel] Could not find log channel {ERROR_LOG_CHANNEL_ID}")
+        return
+    embed = discord.Embed(
+        title="/investigate failure",
+        color=discord.Color.red()
+    )
+    embed.add_field(name="Requested by", value=str(user), inline=False)
+    embed.add_field(name="Video link", value=video_link[:1000], inline=False)
+    embed.add_field(name="Error", value=str(error)[:1000], inline=False)
+    embed.timestamp = discord.utils.utcnow()
+    try:
+        await log_channel.send(embed=embed)
+    except Exception as e:
+        print(f"[log_error_to_channel] Failed to send log: {e}")
+
 @bot.tree.command(name="investigate", description="Analyze a scam evidence video and get a full case breakdown")
 @has_allowed_role()
 @app_commands.describe(video_link="Link to the evidence video (YouTube, Drive, direct link, etc.)")
@@ -954,7 +991,9 @@ async def investigate_command(interaction: discord.Interaction, video_link: str)
     try:
         breakdown = await analyze_video(video_link, status_callback=update_status)
     except Exception as e:
-        await update_status(f"Something went wrong analyzing that video: {e}")
+        print(f"[investigate_command] failed: {e}")
+        await update_status(FRIENDLY_ERROR_MESSAGE)
+        await log_error_to_channel(video_link, e, interaction.user)
         return
 
     chunk_size = 4000
