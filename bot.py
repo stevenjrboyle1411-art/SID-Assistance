@@ -43,12 +43,12 @@ def has_allowed_role():
         return True
     return app_commands.check(predicate)
 
-INVESTIGATE_ROLE_ID = 995665312827588670
+INVESTIGATE_ROLE_IDS = {995665312827588670, 995664412813824020}
 
 def has_investigate_role():
     async def predicate(interaction: discord.Interaction) -> bool:
         member_role_ids = {role.id for role in interaction.user.roles}
-        if INVESTIGATE_ROLE_ID not in member_role_ids:
+        if INVESTIGATE_ROLE_IDS.isdisjoint(member_role_ids):
             raise app_commands.CheckFailure(
                 "You don't have permission to use this command."
             )
