@@ -101,7 +101,7 @@ def build_embed():
 OPENING_MESSAGE = """Hey there, I'm [NAME], a Scam Investigator at RoDevs. Thank you for your patience!
 **Please provide the following:**
 > - The ID of the accused ([Enable Developer Mode for this](https://youtu.be/9jZdxTnkEe0?si=Rb6M8pd5Odg5JOBE))
-> - A full-screen video of you scrolling through the scammer's DMS slowly from top to bottom.
+> - A full-screen video of you scrolling through the scammer's DMS slowly from top to bottom. Please note, if you are using Discord's Web Version, we require you to include a screen refresh.
 > - Any additional information/context you'd like to add.
 - You have **24 hours** to respond until this ticket is deleted. :alarm_clock:"""
 
@@ -685,6 +685,7 @@ async def on_ready():
 ])
 async def templates_command(interaction: discord.Interaction, template: app_commands.Choice[str]):
     title, content = TEMPLATES[template.value]
+    content = content.replace("[NAME]", interaction.user.display_name)
     embed = discord.Embed(
         title=title,
         description=f"```\n{content}\n```",
