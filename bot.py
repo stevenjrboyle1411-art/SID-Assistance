@@ -110,7 +110,7 @@ ACCUSING_MESSAGE = """:warning: __**YOU'VE BEEN ACCUSED OF [CASE]**__ :warning:
 > - Case: [Scamming, Free Models, Plagiarizing]
 > - Reason: [What did the scammer do that broke the rules in-depth?]
 > - This violates Scam Rule: [What rule does this violate in scam-prevention]?
-- **Failure to respond to the accusations within the next 12 hours will result in severe punishment!** :alarm_clock:"""
+- **Failure to respond to the accusations within the next 24 hours will result in severe punishment!** :alarm_clock:"""
 
 CONCLUSION_MESSAGE = """**__This ticket was settled!__**
 > The scammer received this punishment: `Punishment | Can it be appealed?`
@@ -237,6 +237,11 @@ Identify the type of scam or issue being reported.
 Check whether the case is clearly yours to handle or should be escalated.
 Gather the evidence first, then decide on next steps.
 Keep your messages respectful and focused on facts.
+
+Departmental Order #006 - Effective: When adding the accused to a ticket, you MUST run /staff marketplace-ban on the user and ban them for 24 hours, with reason "Under investigation from Scam Report". This is a mandatory step whenever the accused is added to a ticket, and applies regardless of the specific scam category.
+
+If the accused is found clear (no violation confirmed), you MUST run /staff marketplace-unban on the user and confirm they no longer show as guilty in /background-check. If the user still shows as guilty in /background-check after the unban, contact the HSI immediately rather than leaving the record as-is.
+
 5. Understanding Tickets and Cases
 Every ticket has a structure for a reason. The reporter, their original message, the target, the target's region or timezone, and the reported scam type are not random details. They tell you who is involved, what happened, and how the case should be approached.
 Read this part carefully
@@ -593,6 +598,8 @@ Departmental Order #003 - 2/28/26: Implementation of SynthID for images generate
 Departmental Order #004 - 3/23/26: Depreciation of old handbook & rollout of this document. [Effective]
 Departmental Order #005 - 3/23/26: Reorganization of quota from a bi-weekly basis to a monthly basis. [Effective]
 Departmental Order #005 -3/31/26: Rescission of the cherry-picking rule. [Effective]
+Departmental Order #006 - 8/13/26: Mandatory /staff marketplace-ban (24h, reason "Under investigation from Scam Report") whenever the accused is added to a ticket; mandatory /staff marketplace-unban and /background-check verification if the accused is cleared, escalate to HSI if the record still shows guilty after unban. [Effective]
+Departmental Order #007 - 8/13/26: Accused response window for accusation messages extended from 12 hours to 24 hours. [Effective]
 17. Final Notes and Acknowledgment
 The best investigators are not the fastest ones. They are the ones who are consistent, calm, and fair even when the case is annoying or the people involved are difficult. If you follow the handbook, keep your evidence clean, and ask for help when needed, you will improve quickly.
 """
@@ -686,12 +693,19 @@ async def on_ready():
 async def templates_command(interaction: discord.Interaction, template: app_commands.Choice[str]):
     title, content = TEMPLATES[template.value]
     content = content.replace("[NAME]", interaction.user.display_name)
-    embed = discord.Embed(
-        title=title,
-        description=f"```\n{content}\n```",
-        color=discord.Color.blurple()
-    )
-    await interaction.response.send_message(embed=embed)
+
+    # Sent as a plain message (not an embed) so mobile users can long-press
+    # and use "Copy Text" to grab the whole thing at once - copying text out
+    # of an embed is much harder/unreliable on mobile.
+    message = f"**{title}**\n```\n{content}\n```"
+
+    if len(message) > 2000:
+        # Discord's plain-message limit is 2000 chars - fall back to an embed
+        # in the rare case a template exceeds that (none currently do).
+        embed = discord.Embed(title=title, description=f"```\n{content}\n```", color=discord.Color.blurple())
+        await interaction.response.send_message(embed=embed)
+    else:
+        await interaction.response.send_message(content=message)
 
 @bot.tree.command(name="ask", description="Ask a question about the SI handbooks")
 @has_allowed_role()
@@ -1066,5 +1080,29 @@ async def investigate_command(interaction: discord.Interaction, video_link: str)
     for chunk in chunks[1:]:
         follow_embed = discord.Embed(description=chunk, color=discord.Color.blurple())
         await channel.send(embed=follow_embed)
+
+CHANGELOG_CHANNEL_ID = 1529967932258521249
+
+@bot.tree.command(name="changelog", description="Post an update log to the changelog channel")
+@has_allowed_role()
+@app_commands.describe(
+    version="Version number, e.g. 0.1.4",
+    improvements="What changed - one point per line"
+)
+async def changelog_command(interaction: discord.Interaction, version: str, improvements: str):
+    try:
+        channel = bot.get_channel(CHANGELOG_CHANNEL_ID) or await bot.fetch_channel(CHANGELOG_CHANNEL_ID)
+    except Exception as e:
+        await interaction.response.send_message(f"Couldn't find the changelog channel: {e}", ephemeral=True)
+        return
+
+    date_str = discord.utils.utcnow().strftime("%B %d, %Y")
+    message = f"**Bot updated - {date_str}**\n**Improvements**\n{improvements}\n\n-# V.{version}"
+
+    try:
+        await channel.send(message)
+        await interaction.response.send_message("Changelog posted.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to post changelog: {e}", ephemeral=True)
 
 bot.run(TOKEN)
