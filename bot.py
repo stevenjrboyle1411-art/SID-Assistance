@@ -678,6 +678,349 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+# ---------- SI Staff Report ----------
+
+SI_REPORT_GUILD_ID = 995650336679276556
+SI_REPORT_CHANNEL_ID = 1166202561846583416
+SI_REPORT_PING_ROLE_ID = 995665312827588670
+
+# Uses the selected SI staff roles already configured for this server.
+SI_REPORT_ROLE_IDS = {995663617112416296, 995664357801345044}
+
+
+def has_si_report_role():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if interaction.guild_id != SI_REPORT_GUILD_ID:
+            raise app_commands.CheckFailure(
+                "You don't have a role permitted to use this command."
+            )
+
+        member_role_ids = {role.id for role in interaction.user.roles}
+        if SI_REPORT_ROLE_IDS.isdisjoint(member_role_ids):
+            raise app_commands.CheckFailure(
+                "You don't have a role permitted to use this command."
+            )
+
+        return True
+
+    return app_commands.check(predicate)
+
+
+class SIReportStartView(discord.ui.View):
+    def __init__(self, reporter_id: int):
+        super().__init__(timeout=600)
+        self.reporter_id = reporter_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.reporter_id:
+            await interaction.response.send_message(
+                "This report form belongs to someone else.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary)
+    async def continue_report(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(SIReportTargetModal(self.reporter_id))
+
+    @discord.ui.button(label="Nevermind", style=discord.ButtonStyle.secondary)
+    async def cancel_report(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        await interaction.response.edit_message(
+            content="Your SI report has been cancelled.",
+            embed=None,
+            view=None
+        )
+
+
+class SIReportTargetModal(discord.ui.Modal, title="SI Report"):
+    target_id = discord.ui.TextInput(
+        label="Who do you wish to report?",
+        placeholder="Please provide their User ID.",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=20
+    )
+
+    def __init__(self, reporter_id: int):
+        super().__init__()
+        self.reporter_id = reporter_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.reporter_id:
+            await interaction.response.send_message(
+                "This report form belongs to someone else.",
+                ephemeral=True
+            )
+            return
+
+        target_id = self.target_id.value.strip()
+
+        if not target_id.isdigit():
+            await interaction.response.send_message(
+                "That doesn't look like a valid Discord User ID. "
+                "Please start the report again and provide the numeric User ID.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_modal(
+            SIReportReasonModal(self.reporter_id, target_id)
+        )
+
+
+class SIReportReasonModal(discord.ui.Modal, title="SI Report"):
+    reason = discord.ui.TextInput(
+        label="Why do you wish to report this SI?",
+        placeholder=(
+            "Provide as much context as possible, alongside links to evidence "
+            "such as imgchest, imgbb or YouTube."
+        ),
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=4000
+    )
+
+    def __init__(self, reporter_id: int, target_id: str):
+        super().__init__()
+        self.reporter_id = reporter_id
+        self.target_id = target_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.reporter_id:
+            await interaction.response.send_message(
+                "This report form belongs to someone else.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_modal(
+            SIReportActionModal(
+                self.reporter_id,
+                self.target_id,
+                self.reason.value.strip()
+            )
+        )
+
+
+class SIReportActionModal(discord.ui.Modal, title="SI Report"):
+    action = discord.ui.TextInput(
+        label="What would you like done about this?",
+        placeholder="Please explain what outcome or action you would like.",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=2000
+    )
+
+    def __init__(self, reporter_id: int, target_id: str, reason: str):
+        super().__init__()
+        self.reporter_id = reporter_id
+        self.target_id = target_id
+        self.reason = reason
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.reporter_id:
+            await interaction.response.send_message(
+                "This report form belongs to someone else.",
+                ephemeral=True
+            )
+            return
+
+        report_data = {
+            "reporter_id": str(self.reporter_id),
+            "reporter_name": str(interaction.user),
+            "target_id": self.target_id,
+            "reason": self.reason,
+            "action": self.action.value.strip(),
+        }
+
+        embed = discord.Embed(
+            title="SI Staff Report",
+            description=(
+                "Please review the information below before submitting your report."
+            ),
+            color=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="Who do you wish to report?",
+            value=f"<@{report_data['target_id']}> (`{report_data['target_id']}`)",
+            inline=False
+        )
+        embed.add_field(
+            name="Why do you wish to report this SI?",
+            value=report_data["reason"][:1024],
+            inline=False
+        )
+        embed.add_field(
+            name="What would you like done about this?",
+            value=report_data["action"][:1024],
+            inline=False
+        )
+        embed.set_footer(
+            text=f"Report submitted by {interaction.user} ({interaction.user.id})"
+        )
+
+        await interaction.response.send_message(
+            "Do you wish to submit your report?",
+            embed=embed,
+            view=SIReportSubmitView(report_data, interaction.user.id),
+            ephemeral=False
+        )
+
+
+class SIReportSubmitView(discord.ui.View):
+    def __init__(self, report_data: dict, reporter_id: int):
+        super().__init__(timeout=600)
+        self.report_data = report_data
+        self.reporter_id = reporter_id
+        self.submitted = False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.reporter_id:
+            await interaction.response.send_message(
+                "This report form belongs to someone else.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Yes", style=discord.ButtonStyle.success)
+    async def submit_report(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        if self.submitted:
+            return
+
+        self.submitted = True
+
+        try:
+            guild = bot.get_guild(SI_REPORT_GUILD_ID) or await bot.fetch_guild(
+                SI_REPORT_GUILD_ID
+            )
+            channel = guild.get_channel(SI_REPORT_CHANNEL_ID) or await bot.fetch_channel(
+                SI_REPORT_CHANNEL_ID
+            )
+
+            report_embed = discord.Embed(
+                title="SI Staff Report",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            report_embed.add_field(
+                name="Reported SI",
+                value=(
+                    f"<@{self.report_data['target_id']}> "
+                    f"(`{self.report_data['target_id']}`)"
+                ),
+                inline=False
+            )
+            report_embed.add_field(
+                name="Reason",
+                value=self.report_data["reason"][:1024],
+                inline=False
+            )
+            report_embed.add_field(
+                name="Requested Action",
+                value=self.report_data["action"][:1024],
+                inline=False
+            )
+            report_embed.add_field(
+                name="Reported By",
+                value=(
+                    f"{self.report_data['reporter_name']} "
+                    f"(`{self.report_data['reporter_id']}`)"
+                ),
+                inline=False
+            )
+
+            await channel.send(
+                content=f"<@&{SI_REPORT_PING_ROLE_ID}>",
+                embed=report_embed,
+                allowed_mentions=discord.AllowedMentions(roles=True)
+            )
+
+            await interaction.response.edit_message(
+                content="Your report has been submitted successfully. Thank you.",
+                embed=None,
+                view=None
+            )
+
+        except Exception as e:
+            self.submitted = False
+            print(f"[SIReport] Failed to submit report: {e}")
+
+            await interaction.response.send_message(
+                "I couldn't submit your report right now. Please try again or contact an administrator.",
+                ephemeral=True
+            )
+
+    @discord.ui.button(label="No", style=discord.ButtonStyle.secondary)
+    async def cancel_report(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        if self.submitted:
+            return
+
+        self.submitted = True
+
+        await interaction.response.edit_message(
+            content="Your report has not been submitted.",
+            embed=None,
+            view=None
+        )
+
+
+@bot.tree.command(
+    name="SIReport",
+    description="Report another SI for improper behaviour, logging, or other issues"
+)
+@has_si_report_role()
+async def si_report_command(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "Please check your DMs.",
+        ephemeral=True
+    )
+
+    try:
+        dm_embed = discord.Embed(
+            title="SI Staff Report",
+            description=(
+                "Hi there, to report another SI for improper behaviour, logging, "
+                "etc, please click **Continue**.\n\n"
+                "If this was a mistake, please click **Nevermind**."
+            ),
+            color=discord.Color.blurple()
+        )
+
+        await interaction.user.send(
+            embed=dm_embed,
+            view=SIReportStartView(interaction.user.id)
+        )
+
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "I couldn't DM you. Please enable DMs from this server and run `/SIReport` again.",
+            ephemeral=True
+        )
+    except Exception as e:
+        print(f"[SIReport] Failed to DM {interaction.user}: {e}")
+        await interaction.followup.send(
+            "I couldn't start the report form in your DMs. Please try again.",
+            ephemeral=True
+        )
+
 # ---------- Slash commands ----------
 
 @bot.tree.command(name="templates", description="Get a Scam Investigator template message")
