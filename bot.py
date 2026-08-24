@@ -7,6 +7,7 @@ import re
 import subprocess
 import tempfile
 import asyncio
+from typing import Optional
 from openai import OpenAI
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
@@ -678,7 +679,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# ---------- SI Staff Report ----------
+# ---------- SI Staff Report (DM message-based flow) ----------
 
 SI_REPORT_GUILD_ID = 995650336679276556
 SI_REPORT_CHANNEL_ID = 1166202561846583416
@@ -686,6 +687,8 @@ SI_REPORT_PING_ROLE_ID = 995665312827588670
 
 # Uses the selected SI staff roles already configured for this server.
 SI_REPORT_ROLE_IDS = {995663617112416296, 995664357801345044}
+
+REPORT_TIMEOUT = 600  # seconds to wait for each reply before giving up
 
 
 def has_si_report_role():
@@ -704,176 +707,6 @@ def has_si_report_role():
         return True
 
     return app_commands.check(predicate)
-
-
-class SIReportStartView(discord.ui.View):
-    def __init__(self, reporter_id: int):
-        super().__init__(timeout=600)
-        self.reporter_id = reporter_id
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.reporter_id:
-            await interaction.response.send_message(
-                "This report form belongs to someone else.",
-                ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary)
-    async def continue_report(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await interaction.response.send_modal(SIReportTargetModal(self.reporter_id))
-
-    @discord.ui.button(label="Nevermind", style=discord.ButtonStyle.secondary)
-    async def cancel_report(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await interaction.response.edit_message(
-            content="Your SI report has been cancelled.",
-            embed=None,
-            view=None
-        )
-
-
-class SIReportTargetModal(discord.ui.Modal, title="SI Report"):
-    target_id = discord.ui.TextInput(
-        label="Who do you wish to report?",
-        placeholder="Please provide their User ID.",
-        style=discord.TextStyle.short,
-        required=True,
-        max_length=20
-    )
-
-    def __init__(self, reporter_id: int):
-        super().__init__()
-        self.reporter_id = reporter_id
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if interaction.user.id != self.reporter_id:
-            await interaction.response.send_message(
-                "This report form belongs to someone else.",
-                ephemeral=True
-            )
-            return
-
-        target_id = self.target_id.value.strip()
-
-        if not target_id.isdigit():
-            await interaction.response.send_message(
-                "That doesn't look like a valid Discord User ID. "
-                "Please start the report again and provide the numeric User ID.",
-                ephemeral=True
-            )
-            return
-
-        await interaction.response.send_modal(
-            SIReportReasonModal(self.reporter_id, target_id)
-        )
-
-
-class SIReportReasonModal(discord.ui.Modal, title="SI Report"):
-    reason = discord.ui.TextInput(
-        label="Why do you wish to report this SI?",
-        placeholder=(
-            "Provide as much context as possible, alongside links to evidence "
-            "such as imgchest, imgbb or YouTube."
-        ),
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=4000
-    )
-
-    def __init__(self, reporter_id: int, target_id: str):
-        super().__init__()
-        self.reporter_id = reporter_id
-        self.target_id = target_id
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if interaction.user.id != self.reporter_id:
-            await interaction.response.send_message(
-                "This report form belongs to someone else.",
-                ephemeral=True
-            )
-            return
-
-        await interaction.response.send_modal(
-            SIReportActionModal(
-                self.reporter_id,
-                self.target_id,
-                self.reason.value.strip()
-            )
-        )
-
-
-class SIReportActionModal(discord.ui.Modal, title="SI Report"):
-    action = discord.ui.TextInput(
-        label="What would you like done about this?",
-        placeholder="Please explain what outcome or action you would like.",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=2000
-    )
-
-    def __init__(self, reporter_id: int, target_id: str, reason: str):
-        super().__init__()
-        self.reporter_id = reporter_id
-        self.target_id = target_id
-        self.reason = reason
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if interaction.user.id != self.reporter_id:
-            await interaction.response.send_message(
-                "This report form belongs to someone else.",
-                ephemeral=True
-            )
-            return
-
-        report_data = {
-            "reporter_id": str(self.reporter_id),
-            "reporter_name": str(interaction.user),
-            "target_id": self.target_id,
-            "reason": self.reason,
-            "action": self.action.value.strip(),
-        }
-
-        embed = discord.Embed(
-            title="SI Staff Report",
-            description=(
-                "Please review the information below before submitting your report."
-            ),
-            color=discord.Color.blurple()
-        )
-        embed.add_field(
-            name="Who do you wish to report?",
-            value=f"<@{report_data['target_id']}> (`{report_data['target_id']}`)",
-            inline=False
-        )
-        embed.add_field(
-            name="Why do you wish to report this SI?",
-            value=report_data["reason"][:1024],
-            inline=False
-        )
-        embed.add_field(
-            name="What would you like done about this?",
-            value=report_data["action"][:1024],
-            inline=False
-        )
-        embed.set_footer(
-            text=f"Report submitted by {interaction.user} ({interaction.user.id})"
-        )
-
-        await interaction.response.send_message(
-            "Do you wish to submit your report?",
-            embed=embed,
-            view=SIReportSubmitView(report_data, interaction.user.id),
-            ephemeral=False
-        )
 
 
 class SIReportSubmitView(discord.ui.View):
@@ -972,7 +805,6 @@ class SIReportSubmitView(discord.ui.View):
     ):
         if self.submitted:
             return
-
         self.submitted = True
 
         await interaction.response.edit_message(
@@ -982,44 +814,149 @@ class SIReportSubmitView(discord.ui.View):
         )
 
 
+async def _collect_dm_reply(
+    user: discord.User,
+    prompt: str,
+    validator=None,
+    error_hint: Optional[str] = None
+) -> Optional[str]:
+    """Sends `prompt` to the user's DM and waits for their next DM reply.
+
+    Returns the message content, or None if the user timed out, DMs are
+    closed, or they typed 'cancel'. If `validator` is given and returns
+    False for a reply, the user is re-prompted with error_hint instead
+    of moving on.
+    """
+    def check(m: discord.Message) -> bool:
+        return m.author.id == user.id and isinstance(m.channel, discord.DMChannel)
+
+    while True:
+        try:
+            await user.send(prompt)
+        except discord.Forbidden:
+            return None
+
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=REPORT_TIMEOUT)
+        except asyncio.TimeoutError:
+            try:
+                await user.send(
+                    "You didn't reply in time, so this report has been cancelled. "
+                    "Run `/sireport` again to restart."
+                )
+            except discord.Forbidden:
+                pass
+            return None
+
+        content = msg.content.strip()
+
+        if content.lower() == "cancel":
+            await user.send("Report cancelled.")
+            return None
+
+        if validator and not validator(content):
+            prompt = error_hint or "That doesn't look right, please try again (or type `cancel` to stop)."
+            continue
+
+        return content
+
+
 @bot.tree.command(
     name="sireport",
     description="Report another SI for improper behaviour, logging, or other issues"
 )
 @has_si_report_role()
 async def si_report_command(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        "Please check your DMs.",
-        ephemeral=True
-    )
+    await interaction.response.send_message("Please check your DMs.", ephemeral=True)
+    user = interaction.user
 
     try:
-        dm_embed = discord.Embed(
-            title="SI Staff Report",
-            description=(
-                "Hi there, to report another SI for improper behaviour, logging, "
-                "etc, please click **Continue**.\n\n"
-                "If this was a mistake, please click **Nevermind**."
-            ),
-            color=discord.Color.blurple()
+        await user.send(
+            "Hi there, to report another SI for improper behaviour, logging, etc, "
+            "I'll ask you a few questions here. You can type `cancel` at any point to stop."
         )
-
-        await interaction.user.send(
-            embed=dm_embed,
-            view=SIReportStartView(interaction.user.id)
-        )
-
     except discord.Forbidden:
         await interaction.followup.send(
-            "I couldn't DM you. Please enable DMs from this server and run `/SIReport` again.",
+            "I couldn't DM you. Please enable DMs from this server and run `/sireport` again.",
             ephemeral=True
         )
-    except Exception as e:
-        print(f"[SIReport] Failed to DM {interaction.user}: {e}")
-        await interaction.followup.send(
-            "I couldn't start the report form in your DMs. Please try again.",
-            ephemeral=True
+        return
+
+    # 1. Target user ID
+    def is_valid_id(text: str) -> bool:
+        # allow a raw ID or a <@id> / <@!id> mention
+        cleaned = text.strip("<@!>")
+        return cleaned.isdigit()
+
+    raw_target = await _collect_dm_reply(
+        user,
+        "**Who do you wish to report?** Please reply with their User ID "
+        "(or ping/mention them).",
+        validator=is_valid_id,
+        error_hint=(
+            "That doesn't look like a valid Discord User ID. Please reply with just "
+            "the numeric ID (or a mention), or type `cancel` to stop."
         )
+    )
+    if raw_target is None:
+        return
+    target_id = raw_target.strip("<@!>")
+
+    # 2. Reason
+    reason = await _collect_dm_reply(
+        user,
+        "**Why do you wish to report this SI?** Provide as much context as possible, "
+        "alongside links to evidence such as imgchest, imgbb or YouTube."
+    )
+    if reason is None:
+        return
+
+    # 3. Requested action
+    action = await _collect_dm_reply(
+        user,
+        "**What would you like done about this?** Please explain what outcome or action you'd like."
+    )
+    if action is None:
+        return
+
+    report_data = {
+        "reporter_id": str(user.id),
+        "reporter_name": str(user),
+        "target_id": target_id,
+        "reason": reason,
+        "action": action,
+    }
+
+    embed = discord.Embed(
+        title="SI Staff Report",
+        description="Please review the information below before submitting your report.",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(
+        name="Who do you wish to report?",
+        value=f"<@{target_id}> (`{target_id}`)",
+        inline=False
+    )
+    embed.add_field(
+        name="Why do you wish to report this SI?",
+        value=reason[:1024],
+        inline=False
+    )
+    embed.add_field(
+        name="What would you like done about this?",
+        value=action[:1024],
+        inline=False
+    )
+    embed.set_footer(text=f"Report submitted by {user} ({user.id})")
+
+    try:
+        await user.send(
+            "Do you wish to submit your report?",
+            embed=embed,
+            view=SIReportSubmitView(report_data, user.id)
+        )
+    except discord.Forbidden:
+        pass
 
 # ---------- Slash commands ----------
 
