@@ -983,7 +983,7 @@ class SIReportSubmitView(discord.ui.View):
 
 
 @bot.tree.command(
-    name="SIReport",
+    name="sireport",
     description="Report another SI for improper behaviour, logging, or other issues"
 )
 @has_si_report_role()
