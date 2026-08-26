@@ -3,11 +3,11 @@ from discord import app_commands
 from discord.ext import commands
 import os
 import base64
+import requests
 import re
 import subprocess
 import tempfile
 import asyncio
-from typing import Optional
 from openai import OpenAI
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
@@ -679,285 +679,6 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# ---------- SI Staff Report (DM message-based flow) ----------
-
-SI_REPORT_GUILD_ID = 995650336679276556
-SI_REPORT_CHANNEL_ID = 1166202561846583416
-SI_REPORT_PING_ROLE_ID = 995665312827588670
-
-# Uses the selected SI staff roles already configured for this server.
-SI_REPORT_ROLE_IDS = {995663617112416296, 995664357801345044}
-
-REPORT_TIMEOUT = 600  # seconds to wait for each reply before giving up
-
-
-def has_si_report_role():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        if interaction.guild_id != SI_REPORT_GUILD_ID:
-            raise app_commands.CheckFailure(
-                "You don't have a role permitted to use this command."
-            )
-
-        member_role_ids = {role.id for role in interaction.user.roles}
-        if SI_REPORT_ROLE_IDS.isdisjoint(member_role_ids):
-            raise app_commands.CheckFailure(
-                "You don't have a role permitted to use this command."
-            )
-
-        return True
-
-    return app_commands.check(predicate)
-
-
-class SIReportSubmitView(discord.ui.View):
-    def __init__(self, report_data: dict, reporter_id: int):
-        super().__init__(timeout=600)
-        self.report_data = report_data
-        self.reporter_id = reporter_id
-        self.submitted = False
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.reporter_id:
-            await interaction.response.send_message(
-                "This report form belongs to someone else.",
-                ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="Yes", style=discord.ButtonStyle.success)
-    async def submit_report(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        if self.submitted:
-            return
-
-        self.submitted = True
-
-        try:
-            guild = bot.get_guild(SI_REPORT_GUILD_ID) or await bot.fetch_guild(
-                SI_REPORT_GUILD_ID
-            )
-            channel = guild.get_channel(SI_REPORT_CHANNEL_ID) or await bot.fetch_channel(
-                SI_REPORT_CHANNEL_ID
-            )
-
-            report_embed = discord.Embed(
-                title="SI Staff Report",
-                color=discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-            report_embed.add_field(
-                name="Reported SI",
-                value=(
-                    f"<@{self.report_data['target_id']}> "
-                    f"(`{self.report_data['target_id']}`)"
-                ),
-                inline=False
-            )
-            report_embed.add_field(
-                name="Reason",
-                value=self.report_data["reason"][:1024],
-                inline=False
-            )
-            report_embed.add_field(
-                name="Requested Action",
-                value=self.report_data["action"][:1024],
-                inline=False
-            )
-            report_embed.add_field(
-                name="Reported By",
-                value=(
-                    f"{self.report_data['reporter_name']} "
-                    f"(`{self.report_data['reporter_id']}`)"
-                ),
-                inline=False
-            )
-
-            await channel.send(
-                content=f"<@&{SI_REPORT_PING_ROLE_ID}>",
-                embed=report_embed,
-                allowed_mentions=discord.AllowedMentions(roles=True)
-            )
-
-            await interaction.response.edit_message(
-                content="Your report has been submitted successfully. Thank you.",
-                embed=None,
-                view=None
-            )
-
-        except Exception as e:
-            self.submitted = False
-            print(f"[SIReport] Failed to submit report: {e}")
-
-            await interaction.response.send_message(
-                "I couldn't submit your report right now. Please try again or contact an administrator.",
-                ephemeral=True
-            )
-
-    @discord.ui.button(label="No", style=discord.ButtonStyle.secondary)
-    async def cancel_report(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        if self.submitted:
-            return
-        self.submitted = True
-
-        await interaction.response.edit_message(
-            content="Your report has not been submitted.",
-            embed=None,
-            view=None
-        )
-
-
-async def _collect_dm_reply(
-    user: discord.User,
-    prompt: str,
-    validator=None,
-    error_hint: Optional[str] = None
-) -> Optional[str]:
-    """Sends `prompt` to the user's DM and waits for their next DM reply.
-
-    Returns the message content, or None if the user timed out, DMs are
-    closed, or they typed 'cancel'. If `validator` is given and returns
-    False for a reply, the user is re-prompted with error_hint instead
-    of moving on.
-    """
-    def check(m: discord.Message) -> bool:
-        return m.author.id == user.id and isinstance(m.channel, discord.DMChannel)
-
-    while True:
-        try:
-            await user.send(prompt)
-        except discord.Forbidden:
-            return None
-
-        try:
-            msg = await bot.wait_for("message", check=check, timeout=REPORT_TIMEOUT)
-        except asyncio.TimeoutError:
-            try:
-                await user.send(
-                    "You didn't reply in time, so this report has been cancelled. "
-                    "Run `/sireport` again to restart."
-                )
-            except discord.Forbidden:
-                pass
-            return None
-
-        content = msg.content.strip()
-
-        if content.lower() == "cancel":
-            await user.send("Report cancelled.")
-            return None
-
-        if validator and not validator(content):
-            prompt = error_hint or "That doesn't look right, please try again (or type `cancel` to stop)."
-            continue
-
-        return content
-
-
-@bot.tree.command(
-    name="sireport",
-    description="Report another SI for improper behaviour, logging, or other issues"
-)
-@has_si_report_role()
-async def si_report_command(interaction: discord.Interaction):
-    await interaction.response.send_message("Please check your DMs.", ephemeral=True)
-    user = interaction.user
-
-    try:
-        await user.send(
-            "Hi there, to report another SI for improper behaviour, logging, etc, "
-            "I'll ask you a few questions here. You can type `cancel` at any point to stop."
-        )
-    except discord.Forbidden:
-        await interaction.followup.send(
-            "I couldn't DM you. Please enable DMs from this server and run `/sireport` again.",
-            ephemeral=True
-        )
-        return
-
-    # 1. Target user ID
-    def is_valid_id(text: str) -> bool:
-        # allow a raw ID or a <@id> / <@!id> mention
-        cleaned = text.strip("<@!>")
-        return cleaned.isdigit()
-
-    raw_target = await _collect_dm_reply(
-        user,
-        "**Who do you wish to report?** Please reply with their User ID "
-        "(or ping/mention them).",
-        validator=is_valid_id,
-        error_hint=(
-            "That doesn't look like a valid Discord User ID. Please reply with just "
-            "the numeric ID (or a mention), or type `cancel` to stop."
-        )
-    )
-    if raw_target is None:
-        return
-    target_id = raw_target.strip("<@!>")
-
-    # 2. Reason
-    reason = await _collect_dm_reply(
-        user,
-        "**Why do you wish to report this SI?** Provide as much context as possible, "
-        "alongside links to evidence such as imgchest, imgbb or YouTube."
-    )
-    if reason is None:
-        return
-
-    # 3. Requested action
-    action = await _collect_dm_reply(
-        user,
-        "**What would you like done about this?** Please explain what outcome or action you'd like."
-    )
-    if action is None:
-        return
-
-    report_data = {
-        "reporter_id": str(user.id),
-        "reporter_name": str(user),
-        "target_id": target_id,
-        "reason": reason,
-        "action": action,
-    }
-
-    embed = discord.Embed(
-        title="SI Staff Report",
-        description="Please review the information below before submitting your report.",
-        color=discord.Color.blurple()
-    )
-    embed.add_field(
-        name="Who do you wish to report?",
-        value=f"<@{target_id}> (`{target_id}`)",
-        inline=False
-    )
-    embed.add_field(
-        name="Why do you wish to report this SI?",
-        value=reason[:1024],
-        inline=False
-    )
-    embed.add_field(
-        name="What would you like done about this?",
-        value=action[:1024],
-        inline=False
-    )
-    embed.set_footer(text=f"Report submitted by {user} ({user.id})")
-
-    try:
-        await user.send(
-            "Do you wish to submit your report?",
-            embed=embed,
-            view=SIReportSubmitView(report_data, user.id)
-        )
-    except discord.Forbidden:
-        pass
-
 # ---------- Slash commands ----------
 
 @bot.tree.command(name="templates", description="Get a Scam Investigator template message")
@@ -1384,5 +1105,40 @@ async def changelog_command(interaction: discord.Interaction, version: str, impr
         await interaction.response.send_message("Changelog posted.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Failed to post changelog: {e}", ephemeral=True)
+
+IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
+
+@bot.tree.command(name="uploadimage", description="Upload an image and get a shareable link")
+@app_commands.describe(image="The image to upload")
+async def uploadimage_command(interaction: discord.Interaction, image: discord.Attachment):
+    if not IMGBB_API_KEY:
+        await interaction.response.send_message(
+            "Image hosting isn't configured yet (missing API key).", ephemeral=True
+        )
+        return
+
+    if not (image.content_type and image.content_type.startswith("image/")):
+        await interaction.response.send_message("That doesn't look like an image file.", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+
+    try:
+        image_bytes = await image.read()
+        b64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+        response = requests.post(
+            "https://api.imgbb.com/1/upload",
+            data={"key": IMGBB_API_KEY, "image": b64_image},
+            timeout=30
+        )
+        response.raise_for_status()
+        result = response.json()
+        url = result["data"]["url"]
+
+        await interaction.followup.send(url)
+    except Exception as e:
+        print(f"[uploadimage_command] failed: {e}")
+        await interaction.followup.send(f"Something went wrong uploading that image: {e}")
 
 bot.run(TOKEN)
